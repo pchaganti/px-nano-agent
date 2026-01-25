@@ -78,7 +78,6 @@ api = ClaudeAPI(
     max_tokens=16000,                  # Max response tokens
     temperature=1.0,                   # Sampling temperature
     thinking_budget=10000,             # Extended thinking budget
-    user_id="my-app",                  # User ID for tracking
     base_url="https://api.anthropic.com/v1/messages?beta=true",
 )
 ```
@@ -95,8 +94,14 @@ api = ClaudeCodeAPI()
 
 # Override specific parameters
 api = ClaudeCodeAPI(
+    auth_token="sk-ant-oat01-...",  # OAuth token or API key
     model="claude-opus-4-20250514",
     max_tokens=8192,
+    thinking_budget=10000,
+    temperature=1.0,
+    user_id="my-app",
+    base_url="https://api.anthropic.com/v1/messages",
+    config_path="~/.nano-agent.json",
 )
 ```
 

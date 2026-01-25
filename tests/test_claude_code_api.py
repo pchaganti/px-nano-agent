@@ -33,7 +33,7 @@ MOCK_BODY_PARAMS: dict[str, Any] = {
 }
 
 
-@pytest.fixture  # type: ignore[untyped-decorator]
+@pytest.fixture
 def mock_get_config() -> Generator[MagicMock, None, None]:
     """Mock get_config to avoid actual CLI capture."""
     with patch("nano_agent.claude_code_api.get_config") as mock:
@@ -103,7 +103,7 @@ class TestClaudeCodeAPIRepr:
 class TestClaudeCodeAPISend:
     """Test ClaudeCodeAPI send method."""
 
-    @pytest.fixture  # type: ignore[untyped-decorator]
+    @pytest.fixture
     def mock_httpx_response(self) -> MagicMock:
         """Create a mock HTTP response."""
         mock_response = MagicMock()
@@ -124,7 +124,7 @@ class TestClaudeCodeAPISend:
         }
         return mock_response
 
-    @pytest.mark.asyncio  # type: ignore[untyped-decorator]
+    @pytest.mark.asyncio
     async def test_send_uses_captured_headers(
         self, mock_get_config: MagicMock, mock_httpx_response: MagicMock
     ) -> None:
@@ -137,7 +137,7 @@ class TestClaudeCodeAPISend:
             headers = mock_post.call_args.kwargs["headers"]
             assert headers["x-api-key"] == "sk-ant-test123456789"
 
-    @pytest.mark.asyncio  # type: ignore[untyped-decorator]
+    @pytest.mark.asyncio
     async def test_send_with_dag(
         self, mock_get_config: MagicMock, mock_httpx_response: MagicMock
     ) -> None:
@@ -149,7 +149,7 @@ class TestClaudeCodeAPISend:
             response = await api.send(dag)
             assert response.get_text() == "Hello!"
 
-    @pytest.mark.asyncio  # type: ignore[untyped-decorator]
+    @pytest.mark.asyncio
     async def test_send_uses_captured_system(
         self, mock_get_config: MagicMock, mock_httpx_response: MagicMock
     ) -> None:
@@ -166,7 +166,7 @@ class TestClaudeCodeAPISend:
 class TestClaudeCodeAPIContextManager:
     """Test ClaudeCodeAPI async context manager."""
 
-    @pytest.mark.asyncio  # type: ignore[untyped-decorator]
+    @pytest.mark.asyncio
     async def test_async_context_manager(self, mock_get_config: MagicMock) -> None:
         """Verify async context manager works."""
         async with ClaudeCodeAPI() as api:

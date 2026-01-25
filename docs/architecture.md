@@ -267,7 +267,7 @@ class Role(str, Enum):
 ContentBlock = TextContent | ThinkingContent | ToolUseContent | ToolResultContent
 
 # Full type annotations
-def to_messages(self, scope: str = "main") -> list[Message]:
+def to_messages(self) -> list[Message]:
     ...
 ```
 

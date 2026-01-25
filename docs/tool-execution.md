@@ -129,9 +129,7 @@ for call in tool_calls:
 merged = Node.with_parents(
     result_nodes,
     Message(Role.USER, tool_results),
-    scope=dag._scope,
 )
-dag = dag._with_heads((merged,))
 ```
 
 ### Using the run() Executor
