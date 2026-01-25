@@ -12,11 +12,11 @@ Get started with nano-agent in under 5 minutes. This guide walks you through ins
 
 ```bash
 # Clone the repository
-git clone https://github.com/NTT123/nano_agent.git
-cd nano_agent
+git clone https://github.com/NTT123/nano-agent.git
+cd nano-agent
 
-# Install in development mode
-uv pip install -e .
+# Install dependencies
+uv sync
 ```
 
 With `uv`, examples run automatically without manual installation:
