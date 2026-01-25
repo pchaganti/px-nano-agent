@@ -73,16 +73,9 @@ cd nano-agent
 uv sync
 ```
 
-## Documentation
-
-- [Quickstart](docs/quickstart.md)
-- [Custom Tools Tutorial](docs/custom-tools-tutorial.md)
-- [Configuration](docs/configuration.md)
-- [Full Documentation](docs/README.md)
-
 ## nano-tui
 
-<img src="docs/screenshot.png" alt="nano-tui screenshot" width="600">
+<img src="screenshot.png" alt="nano-tui screenshot" width="600">
 
 Simple terminal UI for debugging:
 
