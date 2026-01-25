@@ -185,6 +185,7 @@ Available built-in tools:
 For automatic tool execution, use the `run()` helper:
 
 ```python
+import asyncio
 from nano_agent import DAG, ClaudeAPI, run, BashTool
 
 async def main():
