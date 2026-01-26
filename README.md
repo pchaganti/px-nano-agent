@@ -15,7 +15,7 @@ dag = dag.assistant(response.content) # New DAG
 
 **Conversation Graph** - Everything is a node in a directed acyclic graph: system prompts, messages, tool calls, results. Branch and merge for parallel tool execution.
 
-**Built-in Tools** - `BashTool`, `ReadTool`, `WriteTool`, `EditTool`, `GlobTool`, `SearchTool`, `PythonTool`.
+**Built-in Tools** - `BashTool`, `ReadTool`, `WriteTool`, `EditTool`, `GlobTool`, `GrepTool`, `PythonTool`.
 
 **Visualization** - Print any DAG to see the conversation flow, or export to HTML:
 
