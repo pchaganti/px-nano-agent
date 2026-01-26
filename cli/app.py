@@ -73,6 +73,7 @@ from .display import (
     format_system_message,
     format_thinking_message,
     format_thinking_separator,
+    format_token_count,
     format_tool_call,
     format_tool_result,
     format_user_message,
@@ -509,6 +510,16 @@ Input:
                 if has_thinking:
                     self.print_history(format_thinking_separator())
                 self.print_history(format_assistant_message(text_content))
+
+            # Display token count
+            self.print_history(
+                format_token_count(
+                    input_tokens=response.usage.input_tokens,
+                    output_tokens=response.usage.output_tokens,
+                    cache_creation_tokens=response.usage.cache_creation_input_tokens,
+                    cache_read_tokens=response.usage.cache_read_input_tokens,
+                )
+            )
 
             # Handle tool calls
             tool_calls = response.get_tool_use()
