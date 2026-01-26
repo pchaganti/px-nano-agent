@@ -260,7 +260,7 @@ class SimpleTerminalApp:
                 event.current_buffer.insert_text("\n")
 
             # Use FileHistory for persistent history across sessions
-            history_path = Path.home() / ".nano-tui-history"
+            history_path = Path.home() / ".nano-chat-history"
             self.session = PromptSession(
                 history=FileHistory(str(history_path)),
                 key_bindings=bindings,
@@ -536,7 +536,7 @@ Input:
         await self.wait_for_valid_terminal_size()
 
         # Print header
-        self.print_history(Text("nano-agent Simple TUI", style="bold cyan"))
+        self.print_history(Text("nano-chat", style="bold cyan"))
         self.print_history(
             Text(
                 "Type your message. /help for commands. Ctrl+C to cancel. Ctrl+D to exit.",
@@ -577,10 +577,10 @@ Input:
 
 
 def main() -> None:
-    """Entry point for the simple TUI application."""
+    """Entry point for the TUI application."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="nano-agent TUI")
+    parser = argparse.ArgumentParser(description="nano-chat")
     parser.add_argument(
         "--gemini",
         metavar="MODEL",

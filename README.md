@@ -73,15 +73,15 @@ cd nano-agent
 uv sync
 ```
 
-## nano-tui
+## nano-chat
 
-<img src="screenshot.png" alt="nano-tui screenshot" width="600">
+<img src="screenshot.png" alt="nano-chat screenshot" width="600">
 
 Simple terminal UI for debugging:
 
 ```bash
 uv run nano-agent-capture-auth
-uv run nano-tui
+uv run nano-chat
 ```
 
 ## License
