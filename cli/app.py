@@ -704,6 +704,16 @@ Input:
                 ToolResultContent(tool_use_id=tool_call.id, content=result_list)
             )
         except asyncio.CancelledError:
+            # User cancelled - add tool result to avoid API error about missing tool_result
+            cancelled_result = TextContent(text="Operation cancelled by user.")
+            self.add_message(
+                create_tool_result_message(cancelled_result.text, is_error=True)
+            )
+            self.dag = self.dag.tool_result(
+                ToolResultContent(
+                    tool_use_id=tool_call.id, content=[cancelled_result], is_error=True
+                )
+            )
             raise
         except Exception as e:
             error_result = TextContent(text=f"Tool error: {e}")
