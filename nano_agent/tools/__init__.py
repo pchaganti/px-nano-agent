@@ -1,71 +1,73 @@
 """Built-in tool definitions for Claude API.
 
-This module re-exports all tools from the nano_agent.tools package
-for backward compatibility. New code should import directly from
-nano_agent.tools instead.
-
-Example:
-    # Old style (still works):
-    from nano_agent.tools import BashTool
-
-    # Preferred style:
-    from nano_agent.tools import BashTool
+This package provides a collection of tools that can be used with the Claude API.
+Each tool is in its own module for better organization and maintainability.
 """
 
-# Re-export everything from the tools package
-from nano_agent.tools import (
-    BashInput,
-    BashTool,
+from .base import (
     Desc,
-    EditConfirmInput,
-    EditConfirmTool,
-    EditInput,
-    EditTool,
     Field,
-    GlobInput,
-    GlobTool,
-    GrepInput,
-    GrepTool,
     InputSchemaDict,
-    PendingEdit,
-    PythonInput,
-    PythonScript,
-    PythonTool,
     Question,
     QuestionOption,
-    ReadInput,
-    ReadTool,
-    StatInput,
-    StatTool,
-    Todo,
-    TodoItemInput,
-    TodoStatus,
-    TodoWriteInput,
-    TodoWriteTool,
     Tool,
     ToolDict,
     TruncatedOutput,
     TruncationConfig,
-    WebFetchInput,
-    WebFetchTool,
-    WriteInput,
-    WriteTool,
     _DEFAULT_TRUNCATION_CONFIG,
-    _pending_edits,
-    _python_scripts,
     _save_full_output,
     _truncate_text_content,
     _truncated_outputs,
     cleanup_truncated_outputs,
     clear_all_truncated_outputs,
-    clear_python_scripts,
     convert_input,
     get_call_input_type,
-    get_default_tools,
-    get_pending_edit,
-    list_python_scripts,
     schema_from_dataclass,
 )
+from .bash import BashInput, BashTool
+from .edit import (
+    EditConfirmInput,
+    EditConfirmTool,
+    EditInput,
+    EditTool,
+    PendingEdit,
+    _pending_edits,
+    get_pending_edit,
+)
+from .glob import GlobInput, GlobTool
+from .grep import GrepInput, GrepTool
+from .python import (
+    PythonInput,
+    PythonScript,
+    PythonTool,
+    _python_scripts,
+    clear_python_scripts,
+    list_python_scripts,
+)
+from .read import ReadInput, ReadTool
+from .stat import StatInput, StatTool
+from .todo import Todo, TodoItemInput, TodoStatus, TodoWriteInput, TodoWriteTool
+from .webfetch import WebFetchInput, WebFetchTool
+from .write import WriteInput, WriteTool
+
+def get_default_tools() -> list[Tool]:
+    """Get the default set of all built-in tools.
+
+    Returns a new list of tool instances each time it's called.
+    """
+    return [
+        BashTool(),
+        GlobTool(),
+        GrepTool(),
+        ReadTool(),
+        StatTool(),
+        EditTool(),
+        EditConfirmTool(),
+        WriteTool(),
+        WebFetchTool(),
+        TodoWriteTool(),
+        PythonTool(),
+    ]
 
 __all__ = [
     # Base classes and utilities

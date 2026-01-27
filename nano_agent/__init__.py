@@ -89,6 +89,7 @@ from .tools import (
     clear_python_scripts,
     convert_input,
     get_call_input_type,
+    get_default_tools,
     get_pending_edit,
     list_python_scripts,
     schema_from_dataclass,
@@ -178,4 +179,6 @@ __all__ = [
     "TodoStatus",
     # Executor
     "run",
+    # Default tools function
+    "get_default_tools",
 ]

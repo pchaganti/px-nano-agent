@@ -1,7 +1,6 @@
 from typing import cast
 
 from nano_agent.tools import (
-    DEFAULT_TOOLS,
     BashTool,
     EditConfirmTool,
     EditTool,
@@ -15,6 +14,7 @@ from nano_agent.tools import (
     Tool,
     WebFetchTool,
     WriteTool,
+    get_default_tools,
 )
 
 
@@ -275,18 +275,22 @@ class TestPythonTool:
 class TestDefaultTools:
     def test_default_tools_count(self) -> None:
         # 11 tools (excludes WebSearch stub)
-        assert len(DEFAULT_TOOLS) == 11
+        tools = get_default_tools()
+        assert len(tools) == 11
 
     def test_default_tools_are_tool_instances(self) -> None:
-        for tool in DEFAULT_TOOLS:
+        tools = get_default_tools()
+        for tool in tools:
             assert isinstance(tool, Tool)
 
     def test_default_tools_have_unique_names(self) -> None:
-        names = [tool.name for tool in DEFAULT_TOOLS]
+        tools = get_default_tools()
+        names = [tool.name for tool in tools]
         assert len(names) == len(set(names))
 
     def test_default_tools_all_have_to_dict(self) -> None:
-        for tool in DEFAULT_TOOLS:
+        tools = get_default_tools()
+        for tool in tools:
             result = tool.to_dict()
             assert "name" in result
             assert "description" in result
@@ -307,7 +311,8 @@ class TestDefaultTools:
             "TodoWrite",
             "Python",
         }
-        actual_names = {tool.name for tool in DEFAULT_TOOLS}
+        tools = get_default_tools()
+        actual_names = {tool.name for tool in tools}
         assert actual_names == expected_names
 
 
