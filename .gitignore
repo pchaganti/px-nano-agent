@@ -25,6 +25,8 @@ dag.json
 # Session files
 session.json
 chat.json
+.nano-agent-session.json
+.nano-cli-session.json
 
 # Swap files
 *.swp

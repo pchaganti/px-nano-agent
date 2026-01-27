@@ -81,6 +81,9 @@ from .display import (
     format_user_message,
 )
 
+# Auto-save session file in current directory
+SESSION_FILE = ".nano-cli-session.json"
+
 
 def build_system_prompt(model: str) -> tuple[str, bool]:
     """Build system prompt with dynamic context.
@@ -93,7 +96,7 @@ def build_system_prompt(model: str) -> tuple[str, bool]:
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     claude_md_loaded = False
 
-    base_prompt = f"""You are a helpful terminal assistant.
+    base_prompt = f"""You are a helpful assistant.
 
 ## Context
 - Model: {model}
@@ -111,10 +114,6 @@ Be concise but helpful. When using tools, explain briefly what you're doing."""
             with open(claude_md_path, "r", encoding="utf-8") as f:
                 claude_md_content = f.read()
             base_prompt += f"""
-
-## Project Documentation (CLAUDE.md)
-
-The following document (CLAUDE.md) is the main document describing the project. The user prepared it to provide useful contextual information about the project and the practices that are important:
 
 {claude_md_content}"""
             claude_md_loaded = True
@@ -178,6 +177,55 @@ class TerminalApp:
     def print_blank(self) -> None:
         """Print a blank line for visual separation."""
         self.console.print()
+
+    def _auto_save(self) -> None:
+        """Automatically save the conversation to the session file.
+        
+        Saves silently to SESSION_FILE in the current directory after each
+        conversation turn. Errors are ignored to not interrupt the user.
+        """
+        if not self.dag or not self.dag._heads:
+            return
+        try:
+            filepath = Path.cwd() / SESSION_FILE
+            self.dag.save(filepath, session_id=datetime.now().isoformat())
+        except Exception:
+            # Silently ignore save errors to not interrupt the user
+            pass
+
+    def _auto_load(self) -> bool:
+        """Automatically load conversation from session file if it exists.
+        
+        Returns:
+            True if a session was loaded, False otherwise.
+        """
+        filepath = Path.cwd() / SESSION_FILE
+        if not filepath.exists():
+            return False
+        
+        try:
+            loaded_dag, metadata = DAG.load(filepath)
+            # Restore tools to the loaded DAG
+            if self.tools:
+                loaded_dag = loaded_dag.tools(*self.tools)
+            self.dag = loaded_dag
+            session_id = metadata.get("session_id", "unknown")
+            node_count = len(metadata.get("nodes", {}))
+            # Render the loaded session history
+            self.render_history()
+            self.print_history(
+                format_system_message(
+                    f"Resumed session from: {filepath}\n"
+                    f"  Session ID: {session_id}\n"
+                    f"  Nodes: {node_count}"
+                )
+            )
+            return True
+        except Exception as e:
+            self.print_history(
+                format_system_message(f"Could not load previous session: {e}")
+            )
+            return False
 
     def render_history(self) -> None:
         """Re-render all messages from the DAG.
@@ -504,6 +552,7 @@ class TerminalApp:
             help_text = """Commands:
   /quit, /exit, /q - Exit the application
   /clear - Reset conversation and clear screen
+  /continue, /c - Continue agent execution without user message
   /render - Re-render history (useful after terminal resize)
   /debug - Show DAG as JSON
   /save [filename] - Save session to file (default: session.json)
@@ -637,10 +686,8 @@ Input:
         except (EOFError, KeyboardInterrupt):
             return False
 
-    async def _execute_tool(
-        self, tool_call: ToolUseContent, cancellable: bool = True
-    ) -> None:
-        """Execute a tool call, optionally with cancellation support."""
+    async def _execute_tool(self, tool_call: ToolUseContent) -> None:
+        """Execute a tool call with cancellation support."""
         if not self.dag:
             return
 
@@ -677,10 +724,7 @@ Input:
             return
 
         try:
-            if cancellable:
-                result = await self.cancel_token.run(tool.execute(tool_call.input))
-            else:
-                result = await tool.execute(tool_call.input)
+            result = await self.cancel_token.run(tool.execute(tool_call.input))
             result_list = result if isinstance(result, list) else [result]
             result_text = "\n".join(r.text for r in result_list)
             self.print_history(format_tool_result(result_text))
@@ -698,89 +742,96 @@ Input:
                 )
             )
 
-    async def _agent_loop(self) -> None:
-        """Run agent loop with cancellation support."""
-        if not self.api or not self.dag:
-            return
-
-        while True:
-            # Check for cancellation before API call
-            if self.cancel_token.is_cancelled:
-                raise asyncio.CancelledError()
-
-            # Show spinner in dynamic area while waiting
-            with Live(
-                Spinner("dots", text="Thinking... (Ctrl+C to cancel)"),
-                console=self.console,
-                refresh_per_second=10,
-                transient=True,  # Remove spinner when done
-            ) as live:
-                # Wrap API call in cancellable task
-                response = await self.cancel_token.run(self.api.send(self.dag))
-                # Update with completion indicator briefly
-                live.update(Text("Response received", style="green dim"))
-
-            # Add response to DAG
-            self.dag = self.dag.assistant(response.content)
-
-            # Debug: show raw content blocks
-            if self.debug:
-                self.print_history(
-                    format_system_message(
-                        f"Response blocks: {[type(b).__name__ for b in response.content]}"
-                    )
+    def _render_response(self, response: Message) -> None:
+        """Render assistant response (thinking, text, token count)."""
+        # Debug: show raw content blocks
+        if self.debug:
+            self.print_history(
+                format_system_message(
+                    f"Response blocks: {[type(b).__name__ for b in response.content]}"
                 )
-                for block in response.content:
-                    self.print_history(format_system_message(f"  {block}"))
+            )
+            for block in response.content:
+                self.print_history(format_system_message(f"  {block}"))
 
-            # Display thinking content (if any)
-            thinking_blocks = response.get_thinking()
-            has_thinking = False
-            for thinking in thinking_blocks:
-                if thinking.thinking:
-                    self.print_history(format_thinking_message(thinking.thinking))
-                    has_thinking = True
+        # Display thinking content (if any)
+        has_thinking = False
+        for thinking in response.get_thinking():
+            if thinking.thinking:
+                self.print_history(format_thinking_message(thinking.thinking))
+                has_thinking = True
 
-            # Display text content with token count
-            text_content = response.get_text()
-            if text_content and text_content.strip():
-                # Add separator if there was thinking content
-                if has_thinking:
-                    self.print_history(format_thinking_separator())
-                # Display assistant message and token count together
-                self.print_history(
-                    Group(
-                        format_assistant_message(text_content),
-                        format_token_count(
-                            input_tokens=response.usage.input_tokens,
-                            output_tokens=response.usage.output_tokens,
-                            cache_creation_tokens=response.usage.cache_creation_input_tokens,
-                            cache_read_tokens=response.usage.cache_read_input_tokens,
-                        ),
-                    )
-                )
-            else:
-                # If no text content, just show token count
-                self.print_history(
+        # Display text content with token count
+        text_content = response.get_text()
+        if text_content and text_content.strip():
+            if has_thinking:
+                self.print_history(format_thinking_separator())
+            self.print_history(
+                Group(
+                    format_assistant_message(text_content),
                     format_token_count(
                         input_tokens=response.usage.input_tokens,
                         output_tokens=response.usage.output_tokens,
                         cache_creation_tokens=response.usage.cache_creation_input_tokens,
                         cache_read_tokens=response.usage.cache_read_input_tokens,
-                    )
+                    ),
                 )
+            )
+        else:
+            self.print_history(
+                format_token_count(
+                    input_tokens=response.usage.input_tokens,
+                    output_tokens=response.usage.output_tokens,
+                    cache_creation_tokens=response.usage.cache_creation_input_tokens,
+                    cache_read_tokens=response.usage.cache_read_input_tokens,
+                )
+            )
 
-            # Handle tool calls
+    async def _agent_loop(self) -> None:
+        """Run agent loop with cancellation support.
+
+        Continuously sends requests to API and executes tool calls until
+        no more tool calls are returned or operation is cancelled.
+        """
+        if not self.api or not self.dag:
+            return
+
+        while True:
+            # API call with spinner
+            with Live(
+                Spinner("dots", text="Thinking... (Ctrl+C to cancel)"),
+                console=self.console,
+                refresh_per_second=10,
+                transient=True,
+            ):
+                response = await self.cancel_token.run(self.api.send(self.dag))
+
+            # Update DAG and render response
+            self.dag = self.dag.assistant(response.content)
+            self._render_response(response)
+
+            # Check for tool calls
             tool_calls = response.get_tool_use()
             if not tool_calls:
                 break
 
-            # Execute each tool with cancellation support
+            # Execute tools
             for tool_call in tool_calls:
-                # Check for cancellation before each tool
-                if self.cancel_token.is_cancelled:
-                    raise asyncio.CancelledError()
-                await self._execute_tool(tool_call, cancellable=True)
+                await self._execute_tool(tool_call)
+
+    async def _run_agent_with_error_handling(self) -> None:
+        """Run agent loop with error handling, auto-save, and visual formatting."""
+        try:
+            await self._agent_loop()
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            self.cancel_token.cancel()
+            self.dag = self.dag.user("[Operation cancelled by user]")
+            self.print_history(format_error_message("Operation cancelled."))
+        except Exception as e:
+            self.print_history(format_error_message(f"API error: {e}"))
+
+        self.print_blank()
+        self._auto_save()
 
     async def send_message(self, text: str) -> None:
         """Send a user message and handle the response with agent loop."""
@@ -788,32 +839,28 @@ Input:
             self.print_history(format_error_message("API not initialized"))
             return
 
-        # Reset cancellation token for new message
         self.cancel_token.reset()
-
-        # Display formatted user message with background color
         self.print_history(format_user_message(text))
         self.print_blank()
-
-        # Add to DAG
         self.dag = self.dag.user(text)
 
-        try:
-            await self._agent_loop()
-        except KeyboardInterrupt:
-            # Ctrl+C pressed - cancel the operation
-            self.cancel_token.cancel()
-            self.dag = self.dag.user("[Operation cancelled by user]")
-            self.print_history(format_error_message("Operation cancelled."))
-        except asyncio.CancelledError:
-            # Cancelled via token (e.g., from tool execution)
-            self.dag = self.dag.user("[Operation cancelled by user]")
-            self.print_history(format_error_message("Operation cancelled."))
-        except Exception as e:
-            self.print_history(format_error_message(f"API error: {e}"))
+        await self._run_agent_with_error_handling()
 
-        # Visual gap after complete response
+    async def continue_agent(self) -> None:
+        """Continue agent execution without adding a user message.
+
+        Useful for resuming after cancellation or when the agent stopped
+        mid-execution (e.g., due to tool call limits).
+        """
+        if not self.api or not self.dag:
+            self.print_history(format_error_message("API not initialized"))
+            return
+
+        self.cancel_token.reset()
+        self.print_history(format_system_message("Continuing execution..."))
         self.print_blank()
+
+        await self._run_agent_with_error_handling()
 
     async def cleanup(self) -> None:
         """Clean up resources."""
@@ -867,6 +914,9 @@ Input:
                         )
                     except Exception as e:
                         self.print_history(format_error_message(f"Failed to load session: {e}"))
+            else:
+                # No --continue specified, try auto-loading from session file
+                self._auto_load()
 
             # Main input loop
             while True:
@@ -881,7 +931,13 @@ Input:
                 if not user_input:
                     continue
 
-                # Handle slash commands
+                # Handle async commands (need special handling)
+                cmd = user_input.lower().strip()
+                if cmd in ("/continue", "/c"):
+                    await self.continue_agent()
+                    continue
+
+                # Handle sync slash commands
                 if user_input.startswith("/"):
                     if not self.handle_command(user_input):
                         self.print_history(format_system_message("Goodbye!"))
