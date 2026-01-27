@@ -53,6 +53,8 @@ from nano_agent import (
 )
 from nano_agent.api_base import APIError
 from nano_agent.cancellation import CancellationToken
+
+from .input_handler import InputHandler
 from nano_agent.capture_claude_code_auth import get_config
 from nano_agent.tools import (
     BashTool,
@@ -152,6 +154,7 @@ class TerminalApp:
     session: PromptSession[str] | None = None
     # Cancellation support
     cancel_token: CancellationToken = field(default_factory=CancellationToken)
+    input_handler: InputHandler = field(default=None, init=False)  # type: ignore
 
     def __post_init__(self) -> None:
         """Initialize tools after dataclass creation."""
@@ -169,6 +172,13 @@ class TerminalApp:
                 PythonTool(),
             ]
         self.tool_map = {tool.name: tool for tool in self.tools}
+
+        # Initialize input handler with escape -> cancel binding
+        self.input_handler = InputHandler(on_escape=self._on_escape_pressed)
+
+    def _on_escape_pressed(self) -> None:
+        """Called when Escape key is pressed during agent execution."""
+        self.cancel_token.cancel()
 
     def print_history(self, content: Text | Panel | RenderableType | str) -> None:
         """Print content to history (scrolls into terminal scrollback)."""
@@ -562,7 +572,7 @@ class TerminalApp:
 Input:
   Enter - Send message
   Ctrl+J - Insert new line (for multiline input)
-  Ctrl+C - Cancel current operation
+  Esc - Cancel current operation (during execution)
   Ctrl+D - Exit"""
             self.print_history(format_system_message(help_text))
             return True
@@ -676,15 +686,21 @@ Input:
 
         self.print_blank()
 
-        # Prompt for confirmation
-        try:
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None, lambda: input("Allow this edit? [y/N]: ").strip().lower()
-            )
-            return response in ("y", "yes")
-        except (EOFError, KeyboardInterrupt):
+        # Prompt for confirmation using single-character input
+        # Print prompt (prompt_yn expects caller to handle display)
+        self.console.print("Allow this edit? [y/n/Esc]: ", end="", style="yellow")
+
+        result = await self.input_handler.prompt_yn()
+
+        # Print newline after single-char input
+        self.console.print()
+
+        if result is None:
+            # Escape pressed - cancel the operation
+            self.cancel_token.cancel()
             return False
+
+        return result
 
     async def _execute_tool(self, tool_call: ToolUseContent) -> None:
         """Execute a tool call with cancellation support."""
@@ -792,32 +808,36 @@ Input:
 
         Continuously sends requests to API and executes tool calls until
         no more tool calls are returned or operation is cancelled.
+
+        Uses InputHandler to detect Escape key for cancellation.
         """
         if not self.api or not self.dag:
             return
 
-        while True:
-            # API call with spinner
-            with Live(
-                Spinner("dots", text="Thinking... (Ctrl+C to cancel)"),
-                console=self.console,
-                refresh_per_second=10,
-                transient=True,
-            ):
-                response = await self.cancel_token.run(self.api.send(self.dag))
+        # Start input handler to detect Escape key during execution
+        async with self.input_handler:
+            while True:
+                # API call with spinner
+                with Live(
+                    Spinner("dots", text="Thinking... (Esc to cancel)"),
+                    console=self.console,
+                    refresh_per_second=10,
+                    transient=True,
+                ):
+                    response = await self.cancel_token.run(self.api.send(self.dag))
 
-            # Update DAG and render response
-            self.dag = self.dag.assistant(response.content)
-            self._render_response(response)
+                # Update DAG and render response
+                self.dag = self.dag.assistant(response.content)
+                self._render_response(response)
 
-            # Check for tool calls
-            tool_calls = response.get_tool_use()
-            if not tool_calls:
-                break
+                # Check for tool calls
+                tool_calls = response.get_tool_use()
+                if not tool_calls:
+                    break
 
-            # Execute tools
-            for tool_call in tool_calls:
-                await self._execute_tool(tool_call)
+                # Execute tools
+                for tool_call in tool_calls:
+                    await self._execute_tool(tool_call)
 
     async def _run_agent_with_error_handling(self) -> None:
         """Run agent loop with error handling, auto-save, and visual formatting."""
@@ -874,7 +894,7 @@ Input:
             self.print_history(Text("nano-cli", style="bold cyan"))
             self.print_history(
                 Text(
-                    "Type your message. /help for commands. Ctrl+C to cancel. Ctrl+D to exit.",
+                    "Type your message. /help for commands. Esc to cancel. Ctrl+D to exit.",
                     style="dim",
                 )
             )
