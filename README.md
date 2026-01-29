@@ -146,12 +146,11 @@ nano-cli --debug
 |-----|--------|
 | Enter | Send message |
 | \\ + Enter | Insert new line (for multiline input) |
-| Shift+Enter | Insert new line (prompt_toolkit only) |
 | Esc | Cancel current operation (during execution) |
 | Ctrl+D | Exit |
+
+Note: Ctrl+J and Shift+Enter are not supported.
 
 ## License
 
 MIT
-
-hello

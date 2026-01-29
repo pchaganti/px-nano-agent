@@ -151,9 +151,11 @@ uv run nano-cli --debug
 | Key | Action |
 |-----|--------|
 | Enter | Send message |
-| Ctrl+J | Insert new line (for multiline input) |
+| \\ + Enter | Insert new line (for multiline input) |
 | Esc | Cancel current operation (during execution) |
 | Ctrl+D | Exit |
+
+Note: Ctrl+J and Shift+Enter are not supported.
 
 ### Features
 
