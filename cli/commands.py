@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Callable
+from typing import Awaitable, Callable
 
+from rich.console import RenderableType
 from rich.json import JSON
 
-from nano_agent import DAG
+from nano_agent import DAG, Tool
 
 from .message_factory import create_error_message, create_system_message
+from .messages import UIMessage
 from .session import SessionStore
 
 
@@ -20,10 +22,10 @@ class CommandContext:
 
     dag: DAG | None
     session_store: SessionStore
-    tools: list
+    tools: list[Tool]
     render_history: Callable[[], None]
-    clear_and_reset: Callable[[], bool]
-    refresh_token: Callable[[], object]
+    clear_and_reset: Callable[[], Awaitable[bool]]
+    refresh_token: Callable[[], Awaitable[bool]]
 
 
 class CommandRouter:
@@ -50,14 +52,14 @@ Input:
 
     async def handle(
         self, command: str, ctx: CommandContext
-    ) -> tuple[bool, list[object]]:
+    ) -> tuple[bool, list[UIMessage | RenderableType]]:
         """Handle a slash command.
 
         Returns:
             (should_continue, messages_to_add)
         """
         cmd = command.lower().strip()
-        messages: list[object] = []
+        messages: list[UIMessage | RenderableType] = []
 
         if cmd in ("/quit", "/exit", "/q"):
             return False, messages

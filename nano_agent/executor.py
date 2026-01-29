@@ -134,16 +134,16 @@ async def run(
             if call.name == "EditConfirm" and permission_callback is not None:
                 allowed = await permission_callback(call.name, call.input or {})
                 if not allowed:
-                    result = TextContent(
+                    denied_result = TextContent(
                         text="Permission denied: User rejected the edit operation. "
                         "The file was NOT modified."
                     )
-                    result_list = [result]
+                    denied_result_list = [denied_result]
                     result_node = tool_use_head.child(
                         ToolExecution(
                             tool_name=call.name,
                             tool_use_id=call.id,
-                            result=result_list,
+                            result=denied_result_list,
                             is_error=True,
                         )
                     )
@@ -151,13 +151,14 @@ async def run(
                     tool_results.append(
                         ToolResultContent(
                             tool_use_id=call.id,
-                            content=result_list,
+                            content=denied_result_list,
                             is_error=True,
                         )
                     )
                     continue  # Skip actual execution
 
             # Use execute() to convert dict input to typed dataclass
+            result: TextContent | list[TextContent]
             try:
                 if cancel_token:
                     result = await cancel_token.run(tool.execute(call.input))

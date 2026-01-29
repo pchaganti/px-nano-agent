@@ -10,7 +10,7 @@ from nano_agent.codex_auth import (
 )
 
 
-def _write_auth(tmp_path: Path, payload: dict) -> Path:
+def _write_auth(tmp_path: Path, payload: dict[str, object]) -> Path:
     path = tmp_path / "auth.json"
     path.write_text(json.dumps(payload))
     return path

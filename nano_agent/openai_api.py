@@ -135,7 +135,7 @@ class OpenAIAPI:
                             )
                             text_parts = []
                         # Pass reasoning block through for multi-turn conversations
-                        items.append(block.to_dict())
+                        items.append(dict(block.to_dict()))
                 elif isinstance(block, ToolUseContent):
                     # Flush any accumulated text first
                     if text_parts:

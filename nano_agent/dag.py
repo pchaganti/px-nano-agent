@@ -28,7 +28,7 @@ import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from .data_structures import (
     ContentBlock,
@@ -41,10 +41,15 @@ from .data_structures import (
     TextContent,
     ThinkingContent,
     ToolDefinition,
+    ToolDefinitionDict,
     ToolDefinitions,
     ToolExecution,
     ToolResultContent,
     ToolUseContent,
+    parse_message_content,
+    parse_stop_reason,
+    parse_tool_definitions,
+    parse_tool_execution,
 )
 from .tools import Tool
 
@@ -190,11 +195,7 @@ class Node:
 
     def get_system_prompt(self) -> str:
         """Get all system prompts from ancestors, concatenated."""
-        prompts = []
-        for node in self.ancestors():
-            if isinstance(node.data, SystemPrompt):
-                prompts.append(node.data.content)
-        return "\n\n".join(prompts)
+        return "\n\n".join(self.get_system_prompts())
 
     def get_system_prompts(self) -> list[str]:
         """Get all system prompts from ancestors as a list."""
@@ -204,7 +205,7 @@ class Node:
                 prompts.append(node.data.content)
         return prompts
 
-    def get_tools(self) -> list[dict[str, Any]]:
+    def get_tools(self) -> list[ToolDefinitionDict]:
         """Get tool definitions from ancestors."""
         for node in self.ancestors():
             if isinstance(node.data, ToolDefinitions):
@@ -232,63 +233,32 @@ class Node:
     @classmethod
     def _from_dict(cls, data: dict[str, Any], node_map: dict[str, "Node"]) -> "Node":
         node_data_raw = data.get("data", {})
-        node_data: NodeData
+        node_data: NodeData | None = None
 
         if isinstance(node_data_raw, dict):
             node_type = node_data_raw.get("type", "")
 
             # Reconstruct based on type
             if node_type == "system_prompt":
-                node_data = SystemPrompt.from_dict(node_data_raw)
-
+                content = node_data_raw.get("content")
+                if isinstance(content, str):
+                    node_data = SystemPrompt(content=content)
             elif node_type == "tool_definitions":
-                node_data = ToolDefinitions.from_dict(node_data_raw)
-
+                node_data = parse_tool_definitions(node_data_raw)
             elif node_type == "tool_execution":
-                node_data = ToolExecution.from_dict(node_data_raw)
-
+                node_data = parse_tool_execution(node_data_raw)
             elif node_type == "stop_reason":
-                node_data = StopReason.from_dict(node_data_raw)
+                node_data = parse_stop_reason(node_data_raw)
 
-            elif "role" in node_data_raw:
+            if node_data is None and "role" in node_data_raw:
                 # It's a Message
                 role = Role(node_data_raw.get("role", "user"))
                 content_raw = node_data_raw.get("content", "")
-
-                if isinstance(content_raw, str):
-                    content: (
-                        str
-                        | list[
-                            TextContent
-                            | ThinkingContent
-                            | ToolUseContent
-                            | ToolResultContent
-                        ]
-                    ) = content_raw
-                elif isinstance(content_raw, list):
-                    blocks: list[
-                        TextContent
-                        | ThinkingContent
-                        | ToolUseContent
-                        | ToolResultContent
-                    ] = []
-                    for block in content_raw:
-                        if isinstance(block, dict):
-                            t = block.get("type", "")
-                            if t == "text":
-                                blocks.append(TextContent.from_dict(block))
-                            elif t == "thinking" or t == "reasoning":
-                                # Handle both current "thinking" and legacy "reasoning" types
-                                blocks.append(ThinkingContent.from_dict(block))
-                            elif t == "tool_use":
-                                blocks.append(ToolUseContent.from_dict(block))
-                            elif t == "tool_result":
-                                blocks.append(ToolResultContent.from_dict(block))
-                    content = blocks
-                else:
-                    content = ""
-                node_data = Message(role=role, content=content)
-            else:
+                node_data = Message(
+                    role=role,
+                    content=parse_message_content(content_raw),
+                )
+            elif node_data is None:
                 # Unknown dict type - create a minimal SystemPrompt as fallback
                 node_data = SystemPrompt(content=str(node_data_raw))
         else:
@@ -535,20 +505,28 @@ class DAG:
             if more:
                 raise ValueError("Cannot mix string with ContentBlock arguments")
             return self._with_heads(self._append_to_heads(Message(Role.USER, content)))
-        elif isinstance(content, (list, tuple)):
+        elif isinstance(content, Sequence) and not isinstance(content, str):
             # content is a sequence of blocks (backward compat)
             if more:
                 raise ValueError(
                     "Cannot mix sequence with additional ContentBlock arguments"
                 )
-            return self._with_heads(
-                self._append_to_heads(
-                    Message(Role.USER, cast(list[ContentBlock], list(content)))
-                )
-            )
+            blocks: list[ContentBlock] = []
+            for block in content:
+                if isinstance(
+                    block,
+                    (TextContent, ThinkingContent, ToolUseContent, ToolResultContent),
+                ):
+                    blocks.append(block)
+            return self._with_heads(self._append_to_heads(Message(Role.USER, blocks)))
         else:
             # content is a single ContentBlock
-            block = cast(ContentBlock, content)
+            if not isinstance(
+                content,
+                (TextContent, ThinkingContent, ToolUseContent, ToolResultContent),
+            ):
+                raise TypeError("Invalid content type for user message")
+            block = content
             all_content: list[ContentBlock] = [block, *more]
             return self._with_heads(
                 self._append_to_heads(Message(Role.USER, all_content))
@@ -577,20 +555,30 @@ class DAG:
             return self._with_heads(
                 self._append_to_heads(Message(Role.ASSISTANT, content))
             )
-        elif isinstance(content, (list, tuple)):
+        elif isinstance(content, Sequence) and not isinstance(content, str):
             # content is a sequence of blocks (backward compat)
             if more:
                 raise ValueError(
                     "Cannot mix sequence with additional ContentBlock arguments"
                 )
+            blocks: list[ContentBlock] = []
+            for block in content:
+                if isinstance(
+                    block,
+                    (TextContent, ThinkingContent, ToolUseContent, ToolResultContent),
+                ):
+                    blocks.append(block)
             return self._with_heads(
-                self._append_to_heads(
-                    Message(Role.ASSISTANT, cast(list[ContentBlock], list(content)))
-                )
+                self._append_to_heads(Message(Role.ASSISTANT, blocks))
             )
         else:
             # content is a single ContentBlock
-            block = cast(ContentBlock, content)
+            if not isinstance(
+                content,
+                (TextContent, ThinkingContent, ToolUseContent, ToolResultContent),
+            ):
+                raise TypeError("Invalid content type for assistant message")
+            block = content
             all_content: list[ContentBlock] = [block, *more]
             return self._with_heads(
                 self._append_to_heads(Message(Role.ASSISTANT, all_content))
@@ -616,7 +604,7 @@ class DAG:
     def execute_tools(
         self,
         tool_calls: list[ToolUseContent],
-        handler: Callable[[ToolUseContent], ContentBlock | list[ContentBlock]],
+        handler: Callable[[ToolUseContent], TextContent | list[TextContent]],
     ) -> DAG:
         """High-level helper: execute tools and update graph automatically.
 
@@ -659,7 +647,7 @@ class DAG:
                 ToolExecution(
                     tool_name=tool_call.name,
                     tool_use_id=tool_call.id,
-                    result=cast(list[TextContent], result_list),
+                    result=result_list,
                 )
             )
             result_nodes.append(result_node)
@@ -668,7 +656,7 @@ class DAG:
             tool_results.append(
                 ToolResultContent(
                     tool_use_id=tool_call.id,
-                    content=cast(list[TextContent], result_list),
+                    content=result_list,
                 )
             )
 
@@ -683,7 +671,7 @@ class DAG:
         self,
         response: Response,
         tool_handler: (
-            Callable[[ToolUseContent], ContentBlock | list[ContentBlock]] | None
+            Callable[[ToolUseContent], TextContent | list[TextContent]] | None
         ) = None,
     ) -> DAG:
         """Add API response to graph, with optional automatic tool handling.
@@ -722,7 +710,8 @@ class DAG:
             else:
                 # Manual - just add the tool calls for user to handle
                 # Cast needed because list is invariant
-                dag = dag.assistant(cast(list[ContentBlock], tool_calls))
+                tool_call_blocks: list[ContentBlock] = list(tool_calls)
+                dag = dag.assistant(tool_call_blocks)
 
         return dag
 
@@ -788,7 +777,7 @@ class DAG:
             return ""
         return self.head.get_system_prompt()
 
-    def get_tools(self) -> list[dict[str, Any]]:
+    def get_tools(self) -> list[ToolDefinitionDict]:
         """Get tool definitions.
 
         Returns:

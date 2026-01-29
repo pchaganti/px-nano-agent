@@ -6,6 +6,8 @@ for display in Textual's RichLog widget.
 
 from __future__ import annotations
 
+from typing import Iterable, Iterator, TypeVar
+
 from rich import box
 from rich.console import Console, ConsoleOptions, RenderableType, RenderResult
 from rich.markdown import (
@@ -22,8 +24,10 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
+T = TypeVar("T")
 
-def _loop_first(iterable):
+
+def _loop_first(iterable: Iterable[T]) -> Iterator[tuple[bool, T]]:
     """Yield (is_first, item) for each element."""
     iterator = iter(iterable)
     try:
@@ -418,7 +422,7 @@ def format_status_bar_with_spinner(
 
     # Build status parts
     if spinner_text:
-        spinner = Spinner("dots")
+        spinner: RenderableType = Spinner("dots")
         activity = Text(f"{spinner_text} ", style="cyan")
     else:
         spinner = Text("")

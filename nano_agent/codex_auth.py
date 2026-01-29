@@ -40,9 +40,17 @@ def load_codex_auth(path: Path | str | None = None) -> dict[str, Any] | None:
         pass
 
     try:
-        return json.loads(auth_path.read_text())
+        raw = json.loads(auth_path.read_text())
     except (json.JSONDecodeError, OSError):
         return None
+
+    if isinstance(raw, dict):
+        result: dict[str, Any] = {}
+        for key, value in raw.items():
+            if isinstance(key, str):
+                result[key] = value
+        return result
+    return None
 
 
 def get_codex_access_token(path: Path | str | None = None) -> str | None:

@@ -272,7 +272,10 @@ class TerminalApp:
             return
 
         self._rebuild_message_list_from_dag()
+        # Pause footer to avoid leaving blank reserved lines in scrollback
+        self.input_controller.pause_footer()
         self.message_list.full_redraw(self.console)
+        self.input_controller.resume_footer()
         self.add_message(create_system_message("History rendered."))
 
     async def initialize_api(self) -> bool:

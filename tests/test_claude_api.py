@@ -12,6 +12,7 @@ from nano_agent import (
     ThinkingContent,
     Usage,
 )
+from nano_agent.data_structures import ResponseDict
 
 
 class TestRole:
@@ -104,7 +105,7 @@ class TestUsage:
 
 class TestResponse:
     def test_from_dict_text_content(self) -> None:
-        data: dict[str, Any] = {
+        data: ResponseDict = {
             "id": "msg_123",
             "model": "claude-haiku-4-5-20251001",
             "role": "assistant",
@@ -125,7 +126,7 @@ class TestResponse:
         assert response.usage.output_tokens == 5
 
     def test_from_dict_thinking_content(self) -> None:
-        data: dict[str, Any] = {
+        data: ResponseDict = {
             "id": "msg_456",
             "model": "claude-haiku-4-5-20251001",
             "role": "assistant",
@@ -145,7 +146,7 @@ class TestResponse:
         assert response.content[1].text == "Answer"
 
     def test_get_text(self) -> None:
-        data: dict[str, Any] = {
+        data: ResponseDict = {
             "id": "msg_789",
             "model": "claude-haiku-4-5-20251001",
             "role": "assistant",
@@ -160,7 +161,7 @@ class TestResponse:
         assert response.get_text() == "The answer"
 
     def test_get_text_empty(self) -> None:
-        data: dict[str, Any] = {
+        data: ResponseDict = {
             "id": "msg_000",
             "model": "claude-haiku-4-5-20251001",
             "role": "assistant",

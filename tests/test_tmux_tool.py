@@ -586,7 +586,7 @@ class TestTmuxToolIntegration:
     These tests are skipped if tmux is not available.
     """
 
-    @pytest.fixture
+    @pytest.fixture()  # type: ignore[untyped-decorator]
     def check_tmux(self) -> None:
         """Skip test if tmux is not available."""
         import shutil
@@ -594,15 +594,17 @@ class TestTmuxToolIntegration:
         if shutil.which("tmux") is None:
             pytest.skip("tmux not installed")
 
-    @pytest.fixture
+    @pytest.fixture()  # type: ignore[untyped-decorator]
     def check_libtmux(self) -> None:
         """Skip test if libtmux is not available."""
         try:
-            import libtmux  # noqa: F401
+            import importlib
+
+            importlib.import_module("libtmux")
         except ImportError:
             pytest.skip("libtmux not installed")
 
-    @pytest.mark.usefixtures("check_tmux", "check_libtmux")
+    @pytest.mark.usefixtures("check_tmux", "check_libtmux")  # type: ignore[untyped-decorator]
     def test_list_sessions_real(self) -> None:
         """Test list_sessions with real tmux (doesn't create sessions)."""
         tool = TmuxTool()

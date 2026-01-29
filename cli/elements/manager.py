@@ -9,7 +9,7 @@ This module provides ElementManager which:
 from __future__ import annotations
 
 import asyncio
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from .base import ActiveElement
 from .terminal import RawInputReader, TerminalRegion
@@ -36,7 +36,7 @@ class ElementManager:
     def __init__(self) -> None:
         self._region: TerminalRegion | None = None
         self._input: RawInputReader | None = None
-        self._active: ActiveElement | None = None
+        self._active: ActiveElement[Any] | None = None
 
     def _ensure_initialized(self) -> tuple[TerminalRegion, RawInputReader]:
         """Lazily initialize TTY resources on first use."""
@@ -89,6 +89,10 @@ class ElementManager:
                 if done:
                     # Brief pause so user can see their response
                     await asyncio.sleep(0.15)
+                    if result is None:
+                        raise RuntimeError(
+                            "ActiveElement completed without a result value"
+                        )
                     return result
 
         finally:

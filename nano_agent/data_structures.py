@@ -247,8 +247,9 @@ class TextContent:
         return {"type": "text", "text": self.text}
 
     @classmethod
-    def from_dict(cls, data: TextContentDict) -> "TextContent":
-        return cls(text=str(data.get("text", "")))
+    def from_dict(cls, data: Mapping[str, object]) -> "TextContent":
+        text = data.get("text")
+        return cls(text=str(text) if text is not None else "")
 
 
 @dataclass(frozen=True)
@@ -292,13 +293,27 @@ class ThinkingContent:
         }
 
     @classmethod
-    def from_dict(cls, data: ThinkingContentDict) -> "ThinkingContent":
+    def from_dict(cls, data: Mapping[str, object]) -> "ThinkingContent":
+        summary_items: list[SummaryItem] = []
+        summary_raw = data.get("summary")
+        if isinstance(summary_raw, list):
+            for item in summary_raw:
+                if isinstance(item, dict):
+                    summary_item: SummaryItem = {}
+                    item_type = item.get("type")
+                    item_text = item.get("text")
+                    if isinstance(item_type, str):
+                        summary_item["type"] = item_type
+                    if isinstance(item_text, str):
+                        summary_item["text"] = item_text
+                    if summary_item:
+                        summary_items.append(summary_item)
         return cls(
             thinking=str(data.get("thinking", "")),
             signature=str(data.get("signature", "")),
             id=str(data.get("id", "")),
             encrypted_content=str(data.get("encrypted_content", "")),
-            summary=tuple(data.get("summary", [])),
+            summary=tuple(summary_items),
         )
 
 
@@ -331,7 +346,7 @@ class ToolUseContent:
         }
 
     @classmethod
-    def from_dict(cls, data: ToolUseContentDict) -> "ToolUseContent":
+    def from_dict(cls, data: Mapping[str, object]) -> "ToolUseContent":
         tool_input = data.get("input")
         return cls(
             id=str(data.get("id", "")),
@@ -361,12 +376,14 @@ class ToolResultContent:
         }
 
     @classmethod
-    def from_dict(cls, data: ToolResultContentDict) -> "ToolResultContent":
+    def from_dict(cls, data: Mapping[str, object]) -> "ToolResultContent":
         raw_content = data.get("content", [])
         if isinstance(raw_content, str):
             content = [TextContent(text=raw_content)]
         elif isinstance(raw_content, list):
-            content = [TextContent.from_dict(c) for c in raw_content]
+            content = [
+                TextContent.from_dict(c) for c in raw_content if isinstance(c, Mapping)
+            ]
         else:
             content = [TextContent(text=str(raw_content))]
         return cls(
@@ -420,7 +437,7 @@ class SystemPrompt:
         return {"type": "system_prompt", "content": self.content}
 
     @classmethod
-    def from_dict(cls, data: SystemPromptDict) -> "SystemPrompt":
+    def from_dict(cls, data: Mapping[str, object]) -> "SystemPrompt":
         return cls(content=str(data.get("content", "")))
 
 
@@ -467,8 +484,10 @@ class ToolDefinitions:
         }
 
     @classmethod
-    def from_dict(cls, data: ToolDefinitionsDict) -> "ToolDefinitions":
+    def from_dict(cls, data: Mapping[str, object]) -> "ToolDefinitions":
         tools_raw = data.get("tools", [])
+        if not isinstance(tools_raw, list):
+            return cls(tools=[])
         tool_defs = [
             ToolDefinition(
                 name=t.get("name", ""),
@@ -476,6 +495,7 @@ class ToolDefinitions:
                 input_schema=t.get("input_schema", {}),
             )
             for t in tools_raw
+            if isinstance(t, Mapping)
         ]
         return cls(tools=tool_defs)
 
@@ -505,12 +525,14 @@ class ToolExecution:
         }
 
     @classmethod
-    def from_dict(cls, data: ToolExecutionDict) -> "ToolExecution":
+    def from_dict(cls, data: Mapping[str, object]) -> "ToolExecution":
         raw_result = data.get("result", [])
         if isinstance(raw_result, str):
             result = [TextContent(text=raw_result)]
         elif isinstance(raw_result, list):
-            result = [TextContent.from_dict(r) for r in raw_result]
+            result = [
+                TextContent.from_dict(r) for r in raw_result if isinstance(r, Mapping)
+            ]
         else:
             result = [TextContent(text=str(raw_result))]
         return cls(
@@ -542,11 +564,162 @@ class StopReason:
         }
 
     @classmethod
-    def from_dict(cls, data: StopReasonDict) -> "StopReason":
+    def from_dict(cls, data: Mapping[str, object]) -> "StopReason":
+        usage_raw = data.get("usage", {})
+        usage: dict[str, int] = {}
+        if isinstance(usage_raw, Mapping):
+            for key, value in usage_raw.items():
+                if isinstance(key, str) and isinstance(value, int):
+                    usage[key] = value
         return cls(
             reason=str(data.get("reason", "")),
-            usage=dict(data.get("usage", {})),
+            usage=usage,
         )
+
+
+# =============================================================================
+# Parsing Helpers (centralized raw dict parsing)
+# =============================================================================
+
+
+def parse_content_block(raw: object) -> "ContentBlock | None":
+    if not isinstance(raw, dict):
+        return None
+
+    block_type = raw.get("type")
+    if not isinstance(block_type, str):
+        return None
+
+    if block_type == "text":
+        text = raw.get("text")
+        if not isinstance(text, str):
+            return None
+        return TextContent(text=text)
+
+    if block_type in {"thinking", "reasoning"}:
+        thinking = raw.get("thinking", "")
+        signature = raw.get("signature", "")
+        if not isinstance(thinking, str) or not isinstance(signature, str):
+            return None
+        summary = raw.get("summary", [])
+        return ThinkingContent(
+            thinking=thinking,
+            signature=signature,
+            id=str(raw.get("id", "")),
+            encrypted_content=str(raw.get("encrypted_content", "")),
+            summary=tuple(summary) if isinstance(summary, list) else tuple(),
+        )
+
+    if block_type == "tool_use":
+        tool_id = raw.get("id")
+        name = raw.get("name")
+        if not isinstance(tool_id, str) or not isinstance(name, str):
+            return None
+        tool_input = raw.get("input")
+        return ToolUseContent(
+            id=tool_id,
+            name=name,
+            input=tool_input if isinstance(tool_input, dict) else None,
+        )
+
+    if block_type == "tool_result":
+        tool_use_id = raw.get("tool_use_id")
+        content = raw.get("content")
+        if not isinstance(tool_use_id, str) or not isinstance(content, list):
+            return None
+        parsed: list[TextContent] = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str):
+                    parsed.append(TextContent(text=text))
+        return ToolResultContent(
+            tool_use_id=tool_use_id,
+            content=parsed,
+            is_error=bool(raw.get("is_error", False)),
+        )
+
+    return None
+
+
+def parse_message_content(raw: object) -> str | list["ContentBlock"]:
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, list):
+        blocks: list[ContentBlock] = []
+        for block in raw:
+            parsed = parse_content_block(block)
+            if parsed is not None:
+                blocks.append(parsed)
+        return blocks
+    return ""
+
+
+def parse_tool_definitions(raw: object) -> ToolDefinitions | None:
+    if not isinstance(raw, dict):
+        return None
+    tools_raw = raw.get("tools")
+    if not isinstance(tools_raw, list):
+        return None
+    tool_defs: list[ToolDefinition] = []
+    for tool in tools_raw:
+        if not isinstance(tool, dict):
+            continue
+        name = tool.get("name")
+        description = tool.get("description", "")
+        input_schema = tool.get("input_schema", {})
+        if not isinstance(name, str) or not isinstance(description, str):
+            continue
+        if not isinstance(input_schema, dict):
+            input_schema = {}
+        tool_defs.append(
+            ToolDefinition(
+                name=name,
+                description=description,
+                input_schema=input_schema,
+            )
+        )
+    return ToolDefinitions(tools=tool_defs)
+
+
+def parse_tool_execution(raw: object) -> ToolExecution | None:
+    if not isinstance(raw, dict):
+        return None
+    tool_name = raw.get("tool_name")
+    tool_use_id = raw.get("tool_use_id")
+    if not isinstance(tool_name, str) or not isinstance(tool_use_id, str):
+        return None
+    raw_result = raw.get("result", [])
+    result: list[TextContent] = []
+    if isinstance(raw_result, str):
+        result = [TextContent(text=raw_result)]
+    elif isinstance(raw_result, list):
+        for item in raw_result:
+            if isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str):
+                    result.append(TextContent(text=text))
+    return ToolExecution(
+        tool_name=tool_name,
+        tool_use_id=tool_use_id,
+        result=result,
+        is_error=bool(raw.get("is_error", False)),
+    )
+
+
+def parse_stop_reason(raw: object) -> StopReason | None:
+    if not isinstance(raw, dict):
+        return None
+    reason = raw.get("reason")
+    usage = raw.get("usage", {})
+    if not isinstance(reason, str):
+        return None
+    usage_dict: dict[str, int] = {}
+    if isinstance(usage, dict):
+        for key, value in usage.items():
+            if isinstance(key, str) and isinstance(value, int):
+                usage_dict[key] = value
+    return StopReason(reason=reason, usage=usage_dict)
 
 
 # Sum type for node data (algebraic data type)
@@ -623,29 +796,36 @@ class Response:
         return any(isinstance(block, ToolUseContent) for block in self.content)
 
     @classmethod
-    def from_dict(cls, data: ResponseDict) -> "Response":
+    def from_dict(cls, data: Mapping[str, object]) -> "Response":
         content: list[ContentBlock] = []
-        for block in data.get("content", []):
-            if block["type"] == "text":
-                content.append(TextContent(text=str(block.get("text", ""))))
-            elif block["type"] == "thinking":
-                content.append(
-                    ThinkingContent(
-                        thinking=str(block.get("thinking", "")),
-                        signature=str(block.get("signature", "")),
+        raw_content = data.get("content", [])
+        if isinstance(raw_content, list):
+            for block in raw_content:
+                if not isinstance(block, dict):
+                    continue
+                block_type = block.get("type")
+                if block_type == "text":
+                    content.append(TextContent(text=str(block.get("text", ""))))
+                elif block_type == "thinking":
+                    content.append(
+                        ThinkingContent(
+                            thinking=str(block.get("thinking", "")),
+                            signature=str(block.get("signature", "")),
+                        )
                     )
-                )
-            elif block["type"] == "tool_use":
-                tool_input = block.get("input")
-                content.append(
-                    ToolUseContent(
-                        id=str(block.get("id", "")),
-                        name=str(block.get("name", "")),
-                        input=tool_input if isinstance(tool_input, dict) else None,
+                elif block_type == "tool_use":
+                    tool_input = block.get("input")
+                    content.append(
+                        ToolUseContent(
+                            id=str(block.get("id", "")),
+                            name=str(block.get("name", "")),
+                            input=tool_input if isinstance(tool_input, dict) else None,
+                        )
                     )
-                )
 
         usage_data = data.get("usage", {})
+        if not isinstance(usage_data, dict):
+            usage_data = {}
         usage = Usage(
             input_tokens=usage_data.get("input_tokens", 0),
             output_tokens=usage_data.get("output_tokens", 0),
@@ -655,11 +835,16 @@ class Response:
             cache_read_input_tokens=usage_data.get("cache_read_input_tokens", 0),
         )
 
+        stop_reason = data.get("stop_reason")
         return cls(
-            id=data.get("id", ""),
-            model=data.get("model", ""),
-            role=Role(data.get("role", "assistant")),
+            id=str(data.get("id", "")),
+            model=str(data.get("model", "")),
+            role=Role(str(data.get("role", "assistant"))),
             content=content,
-            stop_reason=data.get("stop_reason"),
+            stop_reason=(
+                stop_reason
+                if isinstance(stop_reason, str) or stop_reason is None
+                else None
+            ),
             usage=usage,
         )

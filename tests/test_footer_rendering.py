@@ -6,7 +6,7 @@ from cli.elements.terminal import ANSI
 
 class _FakeRegion:
     def __init__(self) -> None:
-        self.calls: list[tuple] = []
+        self.calls: list[tuple[object, ...]] = []
         self.num_lines = 0
         self._active = False
 

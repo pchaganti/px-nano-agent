@@ -61,7 +61,9 @@ async def _stream_response(
                     print(line)
                     continue
                 if event.get("type") == "response.completed":
-                    last_response = event.get("response")
+                    response_obj = event.get("response")
+                    if isinstance(response_obj, dict):
+                        last_response = {str(k): v for k, v in response_obj.items()}
             else:
                 print(line)
     return last_response
@@ -69,7 +71,7 @@ async def _stream_response(
 
 def _extract_function_call(response: dict[str, Any]) -> dict[str, Any] | None:
     for item in response.get("output", []):
-        if item.get("type") == "function_call":
+        if isinstance(item, dict) and item.get("type") == "function_call":
             return item
     return None
 

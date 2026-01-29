@@ -77,30 +77,32 @@ class PromptToolkitInput(ActiveElement[str | None]):
         bindings = KeyBindings()
         cancelled = False
 
-        @bindings.add(Keys.Escape)
         def handle_escape(event: Any) -> None:
             """Escape to cancel."""
             nonlocal cancelled
             cancelled = True
             event.app.exit(result="")
 
-        @bindings.add(Keys.ControlJ)
+        bindings.add(Keys.Escape)(handle_escape)
+
         def handle_ctrl_j(event: Any) -> None:
             """Ignore Ctrl+J (do not submit)."""
             return
 
+        bindings.add(Keys.ControlJ)(handle_ctrl_j)
+
         shift_enter = getattr(Keys, "ShiftEnter", None)
         if shift_enter:
 
-            @bindings.add(shift_enter)
             def handle_shift_enter(event: Any) -> None:
                 """Shift+Enter inserts a newline."""
                 event.current_buffer.insert_text("\n")
 
+            bindings.add(shift_enter)(handle_shift_enter)
+
         # Shift+Tab to toggle auto-accept mode
         if self.on_toggle_auto_accept:
 
-            @bindings.add(Keys.BackTab)
             def handle_shift_tab(event: Any) -> None:
                 """Shift+Tab toggles auto-accept mode."""
                 if self.on_toggle_auto_accept:
@@ -108,7 +110,8 @@ class PromptToolkitInput(ActiveElement[str | None]):
                     # Force toolbar refresh to show updated status
                     event.app.invalidate()
 
-        @bindings.add(Keys.Enter)
+            bindings.add(Keys.BackTab)(handle_shift_tab)
+
         def handle_enter(event: Any) -> None:
             """Enter: if line ends with \\, continue on next line; otherwise submit."""
             buffer = event.current_buffer
@@ -121,6 +124,8 @@ class PromptToolkitInput(ActiveElement[str | None]):
             else:
                 # Submit
                 buffer.validate_and_handle()
+
+        bindings.add(Keys.Enter)(handle_enter)
 
         # Set up session with optional history
         self._prompt_len = _visual_len(self.prompt)
@@ -142,13 +147,14 @@ class PromptToolkitInput(ActiveElement[str | None]):
             # Use rprompt (right-side prompt) for status - works with CPR disabled
             from prompt_toolkit.formatted_text import HTML
 
-            def get_rprompt():
+            def get_rprompt() -> object | None:
                 try:
                     if self.get_bottom_toolbar:
                         text = self.get_bottom_toolbar()
-                        return HTML(
+                        html: object = HTML(
                             f"<style bg='#333333' fg='#aaaaaa'> {text} </style>"
                         )
+                        return html
                     return None
                 except Exception:
                     return None
@@ -158,6 +164,8 @@ class PromptToolkitInput(ActiveElement[str | None]):
                 multiline=self.multiline,
                 rprompt=get_rprompt,
             )
+            if not isinstance(result, str):
+                result = str(result)
             if cancelled:
                 self._clear_prompt_lines("")
                 return ""

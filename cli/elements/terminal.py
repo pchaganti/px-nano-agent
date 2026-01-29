@@ -15,6 +15,7 @@ import re
 import sys
 import termios
 import tty
+from typing import Any
 
 from .base import InputEvent
 
@@ -161,7 +162,7 @@ class RawInputReader:
 
     def __init__(self) -> None:
         self.fd = sys.stdin.fileno()
-        self.old_settings: list | None = None
+        self.old_settings: list[Any] | None = None
 
     def start(self) -> None:
         """Enter raw mode and flush any pending input."""
