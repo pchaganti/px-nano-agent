@@ -201,6 +201,8 @@ def convert_input(input_dict: dict[str, Any] | None, input_type: type | None) ->
 # Schema Generation Utilities
 # =============================================================================
 
+# Loose type for schema dicts (allows dynamic schema generation)
+# For stricter typing, use JSONSchema from data_structures
 InputSchemaDict = dict[str, object]
 
 

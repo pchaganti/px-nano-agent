@@ -3,12 +3,204 @@ Core data structures for the agent conversation graph.
 
 This module defines all the dataclasses used throughout the library,
 providing type-safe alternatives to dictionaries.
+
+Uses algebraic data types (sum types via Union) for type-safe
+pattern matching and exhaustiveness checking.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Never, TypeAlias, TypedDict
+
+
+# =============================================================================
+# JSON Type Aliases
+# =============================================================================
+
+# Recursive JSON value type (for strict JSON typing)
+JSONValue: TypeAlias = (
+    str | int | float | bool | None | list["JSONValue"] | dict[str, "JSONValue"]
+)
+
+# JSON object type
+JSONObject: TypeAlias = dict[str, JSONValue]
+
+
+# =============================================================================
+# API-specific TypedDicts
+# =============================================================================
+
+
+class SummaryItem(TypedDict, total=False):
+    """OpenAI reasoning summary item."""
+
+    type: str  # e.g., "summary_text"
+    text: str
+
+
+class JSONSchemaProperty(TypedDict, total=False):
+    """JSON Schema property definition."""
+
+    type: str
+    description: str
+    enum: list[str]
+    items: "JSONSchemaProperty"
+    properties: dict[str, "JSONSchemaProperty"]
+    required: list[str]
+    additionalProperties: bool
+    default: JSONValue
+
+
+class JSONSchema(TypedDict, total=False):
+    """JSON Schema for tool input validation."""
+
+    type: str
+    properties: dict[str, JSONSchemaProperty]
+    required: list[str]
+    additionalProperties: bool
+
+
+# =============================================================================
+# Serialization TypedDicts (for to_dict/from_dict methods)
+# =============================================================================
+
+
+class TextContentDict(TypedDict):
+    """Serialized form of TextContent."""
+
+    type: str
+    text: str
+
+
+class ThinkingContentDict(TypedDict, total=False):
+    """Serialized form of ThinkingContent."""
+
+    type: str
+    thinking: str
+    signature: str
+    # OpenAI reasoning format
+    id: str
+    encrypted_content: str
+    summary: list[SummaryItem]
+
+
+class ToolUseContentDict(TypedDict):
+    """Serialized form of ToolUseContent."""
+
+    type: str
+    id: str
+    name: str
+    input: dict[str, JSONValue] | None
+
+
+class ToolResultContentDict(TypedDict):
+    """Serialized form of ToolResultContent."""
+
+    type: str
+    tool_use_id: str
+    content: list[TextContentDict]
+    is_error: bool
+
+
+# Forward reference for MessageDict (content can be string or list of content blocks)
+ContentBlockDict = TextContentDict | ThinkingContentDict | ToolUseContentDict | ToolResultContentDict
+
+
+class MessageDict(TypedDict):
+    """Serialized form of Message."""
+
+    role: str
+    content: str | list[ContentBlockDict]
+
+
+class SystemPromptDict(TypedDict):
+    """Serialized form of SystemPrompt."""
+
+    type: str
+    content: str
+
+
+class ToolDefinitionDict(TypedDict):
+    """Serialized form of ToolDefinition."""
+
+    name: str
+    description: str
+    input_schema: dict[str, object]  # JSON Schema (loosely typed for dynamic generation)
+
+
+class ToolDefinitionsDict(TypedDict):
+    """Serialized form of ToolDefinitions."""
+
+    type: str
+    tools: list[ToolDefinitionDict]
+
+
+class ToolExecutionDict(TypedDict):
+    """Serialized form of ToolExecution."""
+
+    type: str
+    tool_name: str
+    tool_use_id: str
+    result: list[TextContentDict]
+    is_error: bool
+
+
+class StopReasonDict(TypedDict):
+    """Serialized form of StopReason."""
+
+    type: str
+    reason: str
+    usage: dict[str, int]
+
+
+class UsageDict(TypedDict, total=False):
+    """Token usage statistics."""
+
+    input_tokens: int
+    output_tokens: int
+    cache_creation_input_tokens: int
+    cache_read_input_tokens: int
+    # OpenAI/Codex specific fields
+    reasoning_tokens: int
+    cached_tokens: int
+    total_tokens: int
+
+
+class ResponseDict(TypedDict, total=False):
+    """Serialized form of Response."""
+
+    id: str
+    model: str
+    role: str
+    content: list[ContentBlockDict]
+    stop_reason: str | None
+    usage: UsageDict
+
+
+# =============================================================================
+# Exhaustiveness Helper
+# =============================================================================
+
+
+def assert_never(value: Never) -> Never:
+    """Assert that a value is never reached (for exhaustive pattern matching).
+
+    Usage:
+        def handle(block: ContentBlock) -> str:
+            match block:
+                case TextContent(text=t):
+                    return t
+                case ThinkingContent(thinking=t):
+                    return f"[{t}]"
+                case ToolUseContent(name=n):
+                    return f"tool:{n}"
+                case ToolResultContent():
+                    return "result"
+                case _ as unreachable:
+                    assert_never(unreachable)  # Type error if cases missed
+    """
+    raise AssertionError(f"Unexpected value: {value!r}")
 
 # =============================================================================
 # Enums
@@ -42,17 +234,16 @@ class TextContent:
     """Plain text content block."""
 
     text: str
-    type: str = field(default="text", init=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.text, str):
             raise TypeError(f"text must be str, got {type(self.text).__name__}")
 
-    def to_dict(self) -> dict[str, Any]:
-        return {"type": self.type, "text": self.text}
+    def to_dict(self) -> TextContentDict:
+        return {"type": "text", "text": self.text}
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "TextContent":
+    def from_dict(cls, data: TextContentDict) -> "TextContent":
         return cls(text=str(data.get("text", "")))
 
 
@@ -69,8 +260,7 @@ class ThinkingContent:
     # OpenAI reasoning fields (for multi-turn conversations)
     id: str = ""
     encrypted_content: str = ""
-    summary: tuple[dict[str, Any], ...] = field(default_factory=tuple)
-    type: str = field(default="thinking", init=False)
+    summary: tuple[SummaryItem, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         if not isinstance(self.thinking, str):
@@ -80,7 +270,7 @@ class ThinkingContent:
                 f"signature must be str, got {type(self.signature).__name__}"
             )
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> ThinkingContentDict:
         """Convert to dict for API calls."""
         # OpenAI reasoning format (has encrypted_content)
         if self.encrypted_content:
@@ -92,13 +282,13 @@ class ThinkingContent:
             }
         # Claude thinking format
         return {
-            "type": self.type,
+            "type": "thinking",
             "thinking": self.thinking,
             "signature": self.signature,
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ThinkingContent":
+    def from_dict(cls, data: ThinkingContentDict) -> "ThinkingContent":
         return cls(
             thinking=str(data.get("thinking", "")),
             signature=str(data.get("signature", "")),
@@ -114,10 +304,9 @@ class ToolUseContent:
 
     id: str  # Claude: tool_use id, OpenAI: call_id (for tool results)
     name: str
-    input: dict[str, Any] | None = None
+    input: dict[str, JSONValue] | None = None
     item_id: str | None = None  # OpenAI only: output item id (fc_...)
     thought_signature: str | None = None  # Gemini 3 only: encrypted reasoning context
-    type: str = field(default="tool_use", init=False)
 
     def __post_init__(self) -> None:
         if not self.id:
@@ -129,16 +318,16 @@ class ToolUseContent:
                 f"input must be dict or None, got {type(self.input).__name__}"
             )
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> ToolUseContentDict:
         return {
-            "type": self.type,
+            "type": "tool_use",
             "id": self.id,
             "name": self.name,
             "input": self.input,
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ToolUseContent":
+    def from_dict(cls, data: ToolUseContentDict) -> "ToolUseContent":
         tool_input = data.get("input")
         return cls(
             id=str(data.get("id", "")),
@@ -154,22 +343,21 @@ class ToolResultContent:
     tool_use_id: str
     content: list[TextContent]
     is_error: bool = False
-    type: str = field(default="tool_result", init=False)
 
     def __post_init__(self) -> None:
         if not self.tool_use_id:
             raise ValueError("tool_use_id cannot be empty")
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> ToolResultContentDict:
         return {
-            "type": self.type,
+            "type": "tool_result",
             "tool_use_id": self.tool_use_id,
             "content": [block.to_dict() for block in self.content],
             "is_error": self.is_error,
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ToolResultContent":
+    def from_dict(cls, data: ToolResultContentDict) -> "ToolResultContent":
         raw_content = data.get("content", [])
         if isinstance(raw_content, str):
             content = [TextContent(text=raw_content)]
@@ -184,7 +372,8 @@ class ToolResultContent:
         )
 
 
-# Union type for all content blocks
+# Sum type for content blocks (algebraic data type)
+# Use class-based pattern matching: match block: case TextContent(): ...
 ContentBlock = TextContent | ThinkingContent | ToolUseContent | ToolResultContent
 
 
@@ -200,9 +389,9 @@ class Message:
     role: Role
     content: str | Sequence[ContentBlock]
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> MessageDict:
         if isinstance(self.content, str):
-            content_dict: str | list[dict[str, Any]] = self.content
+            content_dict: str | list[ContentBlockDict] = self.content
         else:
             content_dict = [block.to_dict() for block in self.content]
         return {"role": self.role.value, "content": content_dict}
@@ -218,17 +407,16 @@ class SystemPrompt:
     """System prompt for the conversation."""
 
     content: str
-    type: str = field(default=NodeType.SYSTEM_PROMPT.value, init=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.content, str):
             raise TypeError(f"content must be str, got {type(self.content).__name__}")
 
-    def to_dict(self) -> dict[str, Any]:
-        return {"type": self.type, "content": self.content}
+    def to_dict(self) -> SystemPromptDict:
+        return {"type": "system_prompt", "content": self.content}
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "SystemPrompt":
+    def from_dict(cls, data: SystemPromptDict) -> "SystemPrompt":
         return cls(content=str(data.get("content", "")))
 
 
@@ -238,7 +426,7 @@ class ToolDefinition:
 
     name: str
     description: str
-    input_schema: dict[str, Any]
+    input_schema: Mapping[str, object]  # JSON Schema (use JSONSchema TypedDict for manual construction)
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -247,16 +435,16 @@ class ToolDefinition:
             raise TypeError(
                 f"description must be str, got {type(self.description).__name__}"
             )
-        if not isinstance(self.input_schema, dict):
+        if not isinstance(self.input_schema, Mapping):
             raise TypeError(
-                f"input_schema must be dict, got {type(self.input_schema).__name__}"
+                f"input_schema must be Mapping, got {type(self.input_schema).__name__}"
             )
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> ToolDefinitionDict:
         return {
             "name": self.name,
             "description": self.description,
-            "input_schema": self.input_schema,
+            "input_schema": dict(self.input_schema),
         }
 
 
@@ -265,16 +453,15 @@ class ToolDefinitions:
     """Collection of tool definitions."""
 
     tools: list[ToolDefinition]
-    type: str = field(default=NodeType.TOOL_DEFINITIONS.value, init=False)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> ToolDefinitionsDict:
         return {
-            "type": self.type,
+            "type": "tool_definitions",
             "tools": [t.to_dict() for t in self.tools],
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ToolDefinitions":
+    def from_dict(cls, data: ToolDefinitionsDict) -> "ToolDefinitions":
         tools_raw = data.get("tools", [])
         tool_defs = [
             ToolDefinition(
@@ -295,7 +482,6 @@ class ToolExecution:
     tool_use_id: str
     result: list[TextContent]
     is_error: bool = False
-    type: str = field(default=NodeType.TOOL_EXECUTION.value, init=False)
 
     def __post_init__(self) -> None:
         if not self.tool_name:
@@ -303,9 +489,9 @@ class ToolExecution:
         if not self.tool_use_id:
             raise ValueError("tool_use_id cannot be empty")
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> ToolExecutionDict:
         return {
-            "type": self.type,
+            "type": "tool_execution",
             "tool_name": self.tool_name,
             "tool_use_id": self.tool_use_id,
             "result": [block.to_dict() for block in self.result],
@@ -313,7 +499,7 @@ class ToolExecution:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ToolExecution":
+    def from_dict(cls, data: ToolExecutionDict) -> "ToolExecution":
         raw_result = data.get("result", [])
         if isinstance(raw_result, str):
             result = [TextContent(text=raw_result)]
@@ -335,7 +521,6 @@ class StopReason:
 
     reason: str
     usage: dict[str, int] = field(default_factory=dict)
-    type: str = field(default=NodeType.STOP_REASON.value, init=False)
 
     def __post_init__(self) -> None:
         if not self.reason:
@@ -343,22 +528,23 @@ class StopReason:
         if not isinstance(self.usage, dict):
             raise TypeError(f"usage must be dict, got {type(self.usage).__name__}")
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> StopReasonDict:
         return {
-            "type": self.type,
+            "type": "stop_reason",
             "reason": self.reason,
             "usage": self.usage,
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "StopReason":
+    def from_dict(cls, data: StopReasonDict) -> "StopReason":
         return cls(
             reason=str(data.get("reason", "")),
             usage=dict(data.get("usage", {})),
         )
 
 
-# Union type for all node data
+# Sum type for node data (algebraic data type)
+# Use class-based pattern matching: match data: case Message(): ...
 NodeData = Message | SystemPrompt | ToolDefinitions | ToolExecution | StopReason
 
 
@@ -431,7 +617,7 @@ class Response:
         return any(isinstance(block, ToolUseContent) for block in self.content)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Response":
+    def from_dict(cls, data: ResponseDict) -> "Response":
         content: list[ContentBlock] = []
         for block in data.get("content", []):
             if block["type"] == "text":

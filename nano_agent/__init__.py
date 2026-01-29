@@ -34,20 +34,45 @@ from .claude_code_api import ClaudeCodeAPI
 # Core graph primitives
 from .dag import DAG, Node
 
-# Data structures
-from .data_structures import (  # Message and roles; Content blocks; Node data types
-    ContentBlock,
-    Message,
-    NodeData,
+# Data structures - Core types
+from .data_structures import (
+    # Enums
     Role,
-    StopReason,
-    SystemPrompt,
+    # Content blocks (sum type: ContentBlock)
+    ContentBlock,
     TextContent,
     ThinkingContent,
+    ToolUseContent,
+    ToolResultContent,
+    # Messages
+    Message,
+    # Node data (sum type: NodeData)
+    NodeData,
+    SystemPrompt,
     ToolDefinitions,
     ToolExecution,
-    ToolResultContent,
-    ToolUseContent,
+    StopReason,
+    # Exhaustiveness helper
+    assert_never,
+    # JSON type aliases
+    JSONValue,
+    JSONObject,
+    JSONSchema,
+    # Serialization TypedDicts (for type-safe dict handling)
+    ContentBlockDict,
+    TextContentDict,
+    ThinkingContentDict,
+    ToolUseContentDict,
+    ToolResultContentDict,
+    MessageDict,
+    SystemPromptDict,
+    ToolDefinitionDict,
+    ToolDefinitionsDict,
+    ToolExecutionDict,
+    StopReasonDict,
+    UsageDict,
+    ResponseDict,
+    SummaryItem,
 )
 # Executor
 from .executor import run

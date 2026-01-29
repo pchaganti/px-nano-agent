@@ -25,7 +25,6 @@ class TestRole:
 class TestTextContent:
     def test_default_values(self) -> None:
         content = TextContent(text="")
-        assert content.type == "text"
         assert content.text == ""
 
     def test_with_text(self) -> None:
@@ -40,7 +39,6 @@ class TestTextContent:
 class TestThinkingContent:
     def test_default_values(self) -> None:
         content = ThinkingContent(thinking="")
-        assert content.type == "thinking"
         assert content.thinking == ""
         assert content.signature == ""
 
