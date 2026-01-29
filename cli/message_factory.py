@@ -108,11 +108,26 @@ def add_text_to_assistant(
         cache_creation_tokens: Cache creation token count
         cache_read_tokens: Cache read token count
     """
+    content_added = False
     if text and text.strip():
         if has_thinking:
             msg.append(renderer.thinking_separator())
             msg.append_newline()
         msg.append(renderer.assistant(text))
+        content_added = True
+
+    if input_tokens or output_tokens or cache_creation_tokens or cache_read_tokens:
+        msg.append(
+            renderer.token_count(
+                input_tokens,
+                output_tokens,
+                cache_creation_tokens=cache_creation_tokens,
+                cache_read_tokens=cache_read_tokens,
+            )
+        )
+        content_added = True
+
+    if content_added:
         msg.append_newline()
 
 
