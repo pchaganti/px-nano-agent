@@ -37,7 +37,7 @@ class FooterInput(ActiveElement[str | None]):
     prompt: str = "> "
     buffer: str = ""
     cursor_pos: int = 0
-    cursor_char: str = "█"
+    cursor_char: str = " "  # Shown in reverse video when cursor at end
     allow_multiline: bool = True
     kill_buffer: str = ""
 
@@ -167,11 +167,23 @@ class FooterInput(ActiveElement[str | None]):
 
     def get_lines(self) -> list[str]:
         """Get lines for rendering in footer content area."""
-        display = (
-            self.buffer[: self.cursor_pos]
-            + self.cursor_char
-            + self.buffer[self.cursor_pos :]
-        )
+        # Use ANSI reverse video for cursor (shows character in inverted colors)
+        REVERSE = "\033[7m"
+        RESET = "\033[0m"
+
+        if self.cursor_pos < len(self.buffer):
+            # Cursor within text - show character at cursor in reverse video
+            char_at_cursor = self.buffer[self.cursor_pos]
+            display = (
+                self.buffer[: self.cursor_pos]
+                + REVERSE
+                + char_at_cursor
+                + RESET
+                + self.buffer[self.cursor_pos + 1 :]
+            )
+        else:
+            # Cursor at end - show space in reverse video
+            display = self.buffer + REVERSE + self.cursor_char + RESET
         parts = display.split("\n")
         if not parts:
             return [self.prompt + self.cursor_char]
