@@ -9,11 +9,13 @@ This module provides FooterInput - a multiline text prompt with:
 from __future__ import annotations
 
 import os
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
 from .base import ActiveElement, InputEvent
+from .terminal import ANSI
 
 
 @dataclass
@@ -167,6 +169,9 @@ class FooterInput(ActiveElement[str | None]):
 
     def get_lines(self) -> list[str]:
         """Get lines for rendering in footer content area."""
+        terminal_width = shutil.get_terminal_size().columns
+        prompt_width = len(self.prompt)  # Visual width of prompt (no ANSI codes)
+
         # Use ANSI reverse video for cursor (shows character in inverted colors)
         REVERSE = "\033[7m"
         RESET = "\033[0m"
@@ -184,14 +189,34 @@ class FooterInput(ActiveElement[str | None]):
         else:
             # Cursor at end - show space in reverse video
             display = self.buffer + REVERSE + self.cursor_char + RESET
-        parts = display.split("\n")
-        if not parts:
-            return [self.prompt + self.cursor_char]
-        lines = [f"{self.prompt}{parts[0]}"]
-        indent = " " * len(self.prompt)
-        for part in parts[1:]:
-            lines.append(f"{indent}{part}")
-        return lines
+
+        # Split by logical newlines first
+        logical_lines = display.split("\n")
+
+        result = []
+        for idx, logical_line in enumerate(logical_lines):
+            # First logical line gets prompt, others get indent
+            if idx == 0:
+                prefix = self.prompt
+                available_width = terminal_width - prompt_width
+            else:
+                prefix = " " * prompt_width
+                available_width = terminal_width - prompt_width
+
+            # Wrap the logical line
+            wrapped = ANSI.wrap_to_width(logical_line, available_width)
+
+            for wrap_idx, visual_line in enumerate(wrapped):
+                if wrap_idx == 0:
+                    result.append(prefix + visual_line)
+                else:
+                    # Continuation of wrapped line gets same indent
+                    result.append(" " * prompt_width + visual_line)
+
+        if not result:
+            return [self.prompt + REVERSE + self.cursor_char + RESET]
+
+        return result
 
     def handle_input(self, event: InputEvent) -> tuple[bool, str | None]:
         # Handle Enter - submit or newline

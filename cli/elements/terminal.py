@@ -152,6 +152,64 @@ class ANSI:
 
         return "".join(result) + ellipsis + cls.RESET
 
+    @classmethod
+    def wrap_to_width(cls, s: str, max_width: int) -> list[str]:
+        """Wrap string to max visual width, preserving ANSI codes.
+
+        Returns a list of lines, each fitting within max_width visible characters.
+        ANSI codes are preserved and carried across line breaks.
+        """
+        if max_width <= 0:
+            return [s] if s else []
+
+        visual_len = cls.visual_len(s)
+        if visual_len <= max_width:
+            return [s]
+
+        lines = []
+        current_line: list[str] = []
+        visual_pos = 0
+        active_codes: list[str] = []  # Track active ANSI codes for carry-over
+        i = 0
+
+        while i < len(s):
+            # Check for ANSI escape sequence
+            if s[i] == "\033" and i + 1 < len(s) and s[i + 1] == "[":
+                # Find end of escape sequence
+                j = i + 2
+                while j < len(s) and s[j] not in "mHJK":
+                    j += 1
+                if j < len(s):
+                    j += 1
+                code = s[i:j]
+                current_line.append(code)
+
+                # Track active codes (reset clears, others add)
+                if code == "\033[0m":
+                    active_codes = []
+                else:
+                    active_codes.append(code)
+                i = j
+            else:
+                # Check if we need to wrap
+                if visual_pos >= max_width:
+                    # End current line with reset
+                    current_line.append(cls.RESET)
+                    lines.append("".join(current_line))
+                    # Start new line with active codes
+                    current_line = list(active_codes)
+                    visual_pos = 0
+
+                current_line.append(s[i])
+                visual_pos += 1
+                i += 1
+
+        # Add remaining content
+        if current_line:
+            lines.append("".join(current_line))
+
+        return lines if lines else [""]
+
     # Direct write helpers (write to stdout and flush)
     @classmethod
     def _write(cls, s: str) -> None:

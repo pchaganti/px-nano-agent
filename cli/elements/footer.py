@@ -99,8 +99,9 @@ class TerminalFooter:
 
     def _get_all_lines(self) -> list[str]:
         """Get all lines to render (content + status bar)."""
+        # Content lines are already wrapped by FooterInput
         lines = list(self._content_lines) if self._content_lines else []
-        lines.append(self._format_status_line())
+        lines.append(self._format_status_line())  # Status bar stays truncated
         return lines
 
     def _render_lines(self, lines: list[str]) -> None:
