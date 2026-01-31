@@ -69,6 +69,7 @@ from nano_agent.tools import (
 )
 
 from .commands import CommandContext, CommandRouter
+from .elements.terminal import ANSI
 from .input_controller import InputController
 from .mapper import DAGMessageMapper
 from .message_factory import (
@@ -99,15 +100,9 @@ async def build_system_prompt_async(model: str) -> tuple[str, bool]:
         indicates if CLAUDE.md was found and included in the prompt.
     """
     cwd = os.getcwd()
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     claude_md_loaded = False
 
-    base_prompt = f"""You are a helpful assistant.
-
-## Context
-- Model: {model}
-- Working directory: {cwd}
-- Current time: {now}
+    base_prompt = """You are a helpful assistant.
 
 **Important**: Always use Edit for file modifications. Do not use Bash for file editing (e.g., echo >, sed -i, etc.).
 
@@ -217,6 +212,15 @@ class TerminalApp:
         self.auto_accept = not self.auto_accept
         # Sync with footer status bar
         self.input_controller.update_status(auto_accept=self.auto_accept)
+
+    def _set_bookmark(self) -> None:
+        """Set a terminal bookmark at current cursor position.
+
+        Uses iTerm2/WezTerm OSC 1337 SetMark sequence. The bookmark persists
+        even in scrollback buffer. Used by /clear to preserve content from
+        before the app started.
+        """
+        ANSI.set_mark()
 
     def _sync_status_to_footer(self) -> None:
         """Sync current state to footer status bar."""
@@ -396,15 +400,25 @@ class TerminalApp:
         self.add_message(create_system_message("Connecting to Fireworks API..."))
 
         try:
+            # Map thinking_level to reasoning_effort (off = None)
+            reasoning_effort = (
+                self.thinking_level if self.thinking_level != "off" else None
+            )
             self.api = FireworksAPI(
                 model=self.fireworks_model,
                 debug=self.debug,
                 max_retries=3,
                 session_id="nano-cli-session",
+                reasoning_effort=reasoning_effort,
             )
             model = self.api.model
             claude_md_loaded = await self._build_dag_for_model(model)
-            self.add_message(create_system_message(f"Connected using {model}"))
+            reasoning_info = (
+                f", reasoning={reasoning_effort}" if reasoning_effort else ""
+            )
+            self.add_message(
+                create_system_message(f"Connected using {model}{reasoning_info}")
+            )
             if claude_md_loaded:
                 self.add_message(
                     create_system_message("Loaded CLAUDE.md into system prompt")
@@ -478,7 +492,33 @@ class TerminalApp:
 
         async def _clear_and_reset() -> bool:
             self.message_list.clear()
-            self.console.clear()
+            # Pause footer first
+            self.input_controller.pause_footer()
+            # Clear to bookmark (preserves content before app started)
+            ANSI.clear_to_mark()
+            # Set new bookmark at current position for next clear
+            self._set_bookmark()
+            # Resume footer
+            self.input_controller.resume_footer()
+            # Re-render welcome message and connection status
+            self.add_message(create_welcome_message())
+            if self.api:
+                model = self.api.model
+                if self.use_fireworks:
+                    reasoning = (
+                        self.thinking_level if self.thinking_level != "off" else None
+                    )
+                    info = f", reasoning={reasoning}" if reasoning else ""
+                    self.add_message(
+                        create_system_message(f"Connected using {model}{info}")
+                    )
+                elif self.use_gemini:
+                    self.add_message(create_system_message(f"Connected using {model}"))
+                elif self.use_codex:
+                    self.add_message(create_system_message(f"Connected using {model}"))
+                else:
+                    self.add_message(create_system_message(f"Connected using {model}"))
+            # Rebuild DAG if needed
             if self.dag and self.api:
                 model = self.api.model
                 claude_md_loaded = await self._build_dag_for_model(model)
@@ -1198,8 +1238,30 @@ class TerminalApp:
     async def run(self) -> None:
         """Main application loop."""
         try:
+            # Start input controller first to enter raw mode
+            # This ensures consistent terminal behavior throughout the app
+            await self.input_controller.start()
+
+            # Detect terminal capabilities and set bookmark if supported
+            ANSI.detect_osc_1337_support()
+            self._set_bookmark()
+
             # Add welcome message
             self.add_message(create_welcome_message())
+
+            # Report terminal capabilities
+            if ANSI.supports_osc_1337():
+                self.add_message(
+                    create_system_message(
+                        "Terminal: OSC 1337 supported (iTerm2/WezTerm)"
+                    )
+                )
+            else:
+                self.add_message(
+                    create_system_message(
+                        "Terminal: OSC 1337 not supported, using fallback"
+                    )
+                )
 
             # Initialize API
             if not await self.initialize_api():
@@ -1317,7 +1379,7 @@ def main() -> None:
         "--thinking-level",
         choices=["off", "low", "medium", "high"],
         default="low",
-        help="Gemini thinking level (default: low)",
+        help="Thinking/reasoning level for Gemini, Fireworks, OpenAI (default: low)",
     )
     parser.add_argument(
         "--thinking-budget",
@@ -1338,7 +1400,31 @@ def main() -> None:
         const="session.json",
         help="Continue from a saved session (default: session.json)",
     )
+    parser.add_argument(
+        "--renew",
+        action="store_true",
+        help="Refresh OAuth token and exit (for Claude Code API)",
+    )
     args = parser.parse_args()
+
+    # Handle --renew: refresh token and exit immediately
+    if args.renew:
+        from nano_agent.capture_claude_code_auth import async_get_config
+
+        async def do_renew() -> int:
+            try:
+                print("Refreshing OAuth token...")
+                await async_get_config(timeout=30)
+                print("Token refreshed successfully.")
+                return 0
+            except TimeoutError:
+                print("Error: Token refresh timed out. Is Claude CLI available?")
+                return 1
+            except RuntimeError as e:
+                print(f"Error: Token refresh failed: {e}")
+                return 1
+
+        sys.exit(asyncio.run(do_renew()))
 
     use_codex = args.codex is not None
     use_gemini = args.gemini is not None and not use_codex

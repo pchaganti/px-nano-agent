@@ -1,6 +1,4 @@
-# CLAUDE.md
-
-Guidance for Claude Code when working with this repository.
+# Guidance for working with this repository.
 
 ## Project Overview
 
@@ -17,6 +15,10 @@ Guidance for Claude Code when working with this repository.
 uv run pytest
 uv run pytest tests/test_dag.py -v
 
+# End-to-end tests (makes real API calls, not part of pre-commit)
+uv run python e2e/run_all.py
+uv run python e2e/test_executor_cancellation.py
+
 # Type checking & formatting
 uv run mypy .
 uv run black .
@@ -26,53 +28,6 @@ uv run pre-commit run --all-files
 # Run examples
 uv run python examples/hello_world.py
 uv run python examples/simple_tool.py
-```
-
-## Project Structure
-
-```
-nano_agent/
-├── nano_agent/
-│   ├── dag.py              # Node and DAG classes
-│   ├── data_structures.py  # Message, ContentBlock types
-│   ├── claude_api.py       # ClaudeAPI client
-│   ├── claude_code_api.py  # Claude Code OAuth client
-│   ├── gemini_api.py       # Gemini API client
-│   ├── executor.py         # Agent execution loop (run())
-│   └── tools/              # Built-in tools package
-│       ├── base.py         # Tool base class, schema utilities
-│       ├── bash.py         # BashTool
-│       ├── read.py         # ReadTool
-│       ├── write.py        # WriteTool
-│       ├── edit.py         # EditTool, EditConfirmTool
-│       ├── glob.py         # GlobTool
-│       ├── grep.py         # GrepTool
-│       ├── stat.py         # StatTool
-│       ├── python.py       # PythonTool
-│       ├── todo.py         # TodoWriteTool
-│       └── webfetch.py     # WebFetchTool
-├── cli/
-│   ├── __init__.py         # Entry point and exports
-│   ├── app.py              # Main TerminalApp class
-│   ├── display.py          # Rich rendering formatters
-│   ├── messages.py         # UIMessage, MessageStatus, RenderItem
-│   ├── message_list.py     # MessageList container
-│   ├── message_factory.py  # Factory functions for UIMessage
-│   ├── input_handler.py    # InputHandler protocol
-│   ├── input_handlers.py   # TextInput, Confirmation, Selection handlers
-│   └── elements/           # Interactive UI components
-│       ├── base.py         # ActiveElement protocol, InputEvent
-│       ├── manager.py      # ElementManager - coordinates elements
-│       ├── terminal.py     # TerminalRegion, RawInputReader
-│       ├── confirm_prompt.py   # ConfirmPrompt element
-│       ├── menu_select.py      # MenuSelect element
-│       ├── text_prompt.py      # TextPrompt element
-│       └── prompt_toolkit_input.py  # PromptToolkitInput element
-├── examples/
-├── tests/
-└── scripts/
-    ├── viewer.py           # HTML visualization
-    └── console_viewer.py   # ASCII visualization
 ```
 
 ## CLI Application
@@ -128,6 +83,9 @@ uv run nano-cli --gemini gemini-2.5-flash  # specific model
 uv run nano-cli --continue
 uv run nano-cli --continue my-session.json
 
+# Refresh OAuth token (for 401 errors)
+uv run nano-cli --renew
+
 # Debug mode (show raw response blocks)
 uv run nano-cli --debug
 ```
@@ -161,7 +119,6 @@ Note: Ctrl+J and Shift+Enter are not supported.
 
 - Message-list TUI with Rich rendering
 - Auto-saves session to `.nano-cli-session.json`
-- Loads `CLAUDE.md` from current directory as context
 - Built-in tools: Bash, Read, Write, Edit, Glob, Grep, Stat, TodoWrite, WebFetch, Python
 - Edit tool prompts for user confirmation before applying changes
 

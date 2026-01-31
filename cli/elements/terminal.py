@@ -12,8 +12,10 @@ import asyncio
 import fcntl
 import os
 import re
+import select
 import sys
 import termios
+import time
 import tty
 from typing import Any
 
@@ -63,8 +65,21 @@ class ANSI:
     ENABLE_BRACKETED_PASTE = "\033[?2004h"
     DISABLE_BRACKETED_PASTE = "\033[?2004l"
 
+    # Screen control
+    CLEAR_SCREEN = "\033[2J"  # Clear entire screen
+    CLEAR_SCROLLBACK = "\033[3J"  # Clear scrollback buffer
+    MOVE_HOME = "\033[H"  # Move cursor to home position (1,1)
+
+    # iTerm2/WezTerm bookmark sequences (OSC 1337)
+    SET_MARK = "\033]1337;SetMark\a"  # Mark current cursor position
+    CLEAR_TO_MARK = "\033]1337;ClearToMark\a"  # Clear from mark to buffer end
+
     # Pattern to match ANSI escape sequences (for stripping)
     _ANSI_PATTERN = re.compile(r"\033\[[0-9;]*m")
+
+    # Terminal capability detection (cached)
+    _osc_1337_supported: bool | None = None
+    _osc_1337_detection_done: bool = False
 
     @classmethod
     def cursor_up(cls, n: int = 1) -> str:
@@ -155,6 +170,151 @@ class ANSI:
     def disable_bracketed_paste(cls) -> None:
         """Disable bracketed paste mode."""
         cls._write(cls.DISABLE_BRACKETED_PASTE)
+
+    @classmethod
+    def _read_cursor_position(cls, timeout: float = 0.1) -> tuple[int, int] | None:
+        """Read cursor position from CPR response (ESC[row;colR)."""
+        response = ""
+        deadline = time.time() + timeout
+        fd = sys.stdin.fileno()
+
+        while time.time() < deadline:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                break
+            if select.select([fd], [], [], min(0.01, remaining))[0]:
+                try:
+                    ch = os.read(fd, 1).decode("utf-8", errors="ignore")
+                except (BlockingIOError, OSError):
+                    break
+                if not ch:
+                    break
+                response += ch
+                if ch == "R":
+                    match = re.match(r".*\033\[(\d+);(\d+)R", response)
+                    if match:
+                        return (int(match.group(1)), int(match.group(2)))
+        return None
+
+    @classmethod
+    def detect_osc_1337_support(cls) -> bool:
+        """Detect OSC 1337 support by testing if ClearToMark works.
+
+        Tests by checking if cursor position changes after SetMark/ClearToMark.
+        Result is cached. Safe to call multiple times.
+        """
+        if cls._osc_1337_detection_done:
+            return cls._osc_1337_supported or False
+
+        cls._osc_1337_detection_done = True
+        cls._osc_1337_supported = False
+
+        # Must be a TTY
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            return False
+
+        # Save terminal state
+        fd = sys.stdin.fileno()
+        try:
+            old_settings = termios.tcgetattr(fd)
+        except termios.error:
+            return False
+        old_flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+
+        try:
+            # Set raw mode for reading response
+            tty.setraw(fd)
+            attrs = termios.tcgetattr(fd)
+            attrs[1] |= termios.OPOST | termios.ONLCR
+            termios.tcsetattr(fd, termios.TCSADRAIN, attrs)
+
+            # Flush any pending input
+            termios.tcflush(fd, termios.TCIFLUSH)
+
+            # Query initial cursor position
+            sys.stdout.write("\033[6n")
+            sys.stdout.flush()
+
+            initial_pos = cls._read_cursor_position(0.1)
+            if not initial_pos:
+                return False
+
+            # Set mark, write test char, clear to mark
+            sys.stdout.write(cls.SET_MARK)
+            sys.stdout.write("X")  # Test character
+            sys.stdout.flush()
+
+            sys.stdout.write(cls.CLEAR_TO_MARK)
+            sys.stdout.flush()
+
+            # Query final cursor position
+            termios.tcflush(fd, termios.TCIFLUSH)
+            sys.stdout.write("\033[6n")
+            sys.stdout.flush()
+
+            final_pos = cls._read_cursor_position(0.1)
+            if not final_pos:
+                # Clean up test character if ClearToMark failed
+                sys.stdout.write("\b \b")
+                sys.stdout.flush()
+                return False
+
+            # If cursor moved back, OSC 1337 worked
+            if final_pos[1] <= initial_pos[1]:
+                cls._osc_1337_supported = True
+                return True
+
+            # ClearToMark didn't work - clean up test character
+            sys.stdout.write("\b \b")
+            sys.stdout.flush()
+            return False
+
+        except Exception:
+            return False
+        finally:
+            # Restore terminal state
+            fcntl.fcntl(fd, fcntl.F_SETFL, old_flags)
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    @classmethod
+    def supports_osc_1337(cls) -> bool:
+        """Check if terminal supports OSC 1337 (cached result)."""
+        if not cls._osc_1337_detection_done:
+            cls.detect_osc_1337_support()
+        return cls._osc_1337_supported or False
+
+    @classmethod
+    def clear_screen_and_scrollback(cls) -> None:
+        """Clear entire screen and scrollback buffer, move cursor home."""
+        cls._write(cls.CLEAR_SCREEN + cls.CLEAR_SCROLLBACK + cls.MOVE_HOME)
+
+    @classmethod
+    def set_mark(cls) -> None:
+        """Set a bookmark at the current cursor position (if supported).
+
+        Uses iTerm2/WezTerm OSC 1337 SetMark sequence. The bookmark persists
+        even if content scrolls into the scrollback buffer. Subsequent calls
+        overwrite the previous bookmark (only one bookmark at a time).
+
+        On unsupported terminals, this is a no-op.
+        """
+        if cls.supports_osc_1337():
+            cls._write(cls.SET_MARK)
+
+    @classmethod
+    def clear_to_mark(cls) -> None:
+        """Clear from the bookmark to the end of buffer, or clear screen if unsupported.
+
+        Uses iTerm2/WezTerm OSC 1337 ClearToMark sequence. If no bookmark was
+        set, this has no effect. If the bookmark was purged from scrollback,
+        this clears all content.
+
+        On unsupported terminals, falls back to clear_screen_and_scrollback().
+        """
+        if cls.supports_osc_1337():
+            cls._write(cls.CLEAR_TO_MARK)
+        else:
+            cls.clear_screen_and_scrollback()
 
 
 class RawInputReader:

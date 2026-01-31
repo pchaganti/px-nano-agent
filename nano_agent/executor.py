@@ -61,7 +61,6 @@ async def run(
     while True:
         # Check for cancellation before API call
         if cancel_token and cancel_token.is_cancelled:
-            dag = dag.user("[Operation cancelled by user]")
             stop_reason = "cancelled"
             break
 
@@ -76,7 +75,6 @@ async def run(
                 break
             except asyncio.CancelledError:
                 # Cancellation requested - don't retry
-                dag = dag.user("[Operation cancelled by user]")
                 stop_reason = "cancelled"
                 break
             except APIError as e:
@@ -120,11 +118,11 @@ async def run(
         tool_results = []
 
         cancelled = False
-        for call in tool_calls:
+        cancelled_at_index: int | None = None
+        for i, call in enumerate(tool_calls):
             # Check for cancellation before each tool
             if cancel_token and cancel_token.is_cancelled:
-                dag = dag.user("[Operation cancelled by user]")
-                stop_reason = "cancelled"
+                cancelled_at_index = i  # Tool hasn't started yet
                 cancelled = True
                 break
 
@@ -165,8 +163,7 @@ async def run(
                 else:
                     result = await tool.execute(call.input)
             except asyncio.CancelledError:
-                dag = dag.user("[Operation cancelled by user]")
-                stop_reason = "cancelled"
+                cancelled_at_index = i  # Tool was running when cancelled
                 cancelled = True
                 break
 
@@ -191,8 +188,43 @@ async def run(
                 )
             )
 
-        # If cancelled during tool execution, exit
+        # If cancelled during tool execution, add results for cancelled/pending tools
         if cancelled:
+            assert cancelled_at_index is not None
+            for j in range(cancelled_at_index, len(tool_calls)):
+                pending_call = tool_calls[j]
+                if j == cancelled_at_index:
+                    msg = "Operation cancelled by user."
+                else:
+                    msg = "Tool skipped due to cancellation."
+
+                cancelled_result = TextContent(text=msg)
+                result_node = tool_use_head.child(
+                    ToolExecution(
+                        tool_name=pending_call.name,
+                        tool_use_id=pending_call.id,
+                        result=[cancelled_result],
+                        is_error=True,
+                    )
+                )
+                result_nodes.append(result_node)
+                tool_results.append(
+                    ToolResultContent(
+                        tool_use_id=pending_call.id,
+                        content=[cancelled_result],
+                        is_error=True,
+                    )
+                )
+
+            # Merge all results (completed + cancelled + skipped)
+            if result_nodes:
+                merged = Node.with_parents(
+                    result_nodes,
+                    Message(Role.USER, tool_results),
+                )
+                dag = dag._with_heads((merged,))
+
+            stop_reason = "cancelled"
             break
 
         # Merge all branches with combined results

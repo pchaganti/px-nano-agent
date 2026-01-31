@@ -47,6 +47,7 @@ class FireworksAPI:
         retry_delay: float = 1.0,
         debug: bool = True,
         session_id: str = "nano-agent-session",
+        reasoning_effort: str | None = None,
     ):
         """Initialize Fireworks API client.
 
@@ -61,6 +62,7 @@ class FireworksAPI:
             retry_delay: Initial delay between retries in seconds (default: 1.0)
             debug: Print request/response details on error (default: True)
             session_id: Session ID for session affinity (default: "nano-agent-session")
+            reasoning_effort: Reasoning effort level ("low", "medium", "high") or None to disable
         """
         self.api_key = api_key or os.environ.get("FIREWORKS_API_KEY")
         if not self.api_key:
@@ -76,6 +78,7 @@ class FireworksAPI:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.debug = debug
+        self.reasoning_effort = reasoning_effort
 
         # Session ID for session affinity (enables caching)
         self.session_id = session_id
@@ -196,8 +199,16 @@ class FireworksAPI:
         Fireworks Responses API returns:
         - output: list of message items with content arrays
         - usage: {prompt_tokens, completion_tokens, total_tokens}
+        - reasoning: {content: str, type: "reasoning"} (if reasoning enabled)
         """
         content: list[ContentBlock] = []
+
+        # Add reasoning/thinking content if present
+        reasoning = data.get("reasoning")
+        if reasoning and isinstance(reasoning, dict):
+            reasoning_text = reasoning.get("content", "")
+            if reasoning_text:
+                content.append(ThinkingContent(thinking=reasoning_text))
 
         for item in data.get("output", []):
             item_type = item.get("type", "")
@@ -299,6 +310,10 @@ class FireworksAPI:
             "temperature": self.temperature,
             "store": False,
         }
+
+        # Add reasoning if enabled
+        if self.reasoning_effort:
+            request_body["reasoning"] = {"effort": self.reasoning_effort}
 
         # Add tools if provided
         if tools:
