@@ -4,13 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, ClassVar
+from typing import Annotated, ClassVar
 
 from ..data_structures import TextContent
+from ..execution_context import ExecutionContext
 from .base import Desc, Tool, TruncationConfig, _format_size
-
-if TYPE_CHECKING:
-    from ..execution_context import ExecutionContext
 
 
 @dataclass

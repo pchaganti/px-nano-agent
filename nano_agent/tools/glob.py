@@ -5,13 +5,11 @@ from __future__ import annotations
 import asyncio
 import os
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated, ClassVar
+from typing import Annotated, ClassVar
 
 from ..data_structures import TextContent
+from ..execution_context import ExecutionContext
 from .base import Desc, Tool
-
-if TYPE_CHECKING:
-    from ..execution_context import ExecutionContext
 
 
 @dataclass

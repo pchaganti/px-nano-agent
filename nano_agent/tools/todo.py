@@ -4,13 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Annotated, ClassVar
+from typing import Annotated, ClassVar
 
 from ..data_structures import TextContent
+from ..execution_context import ExecutionContext
 from .base import Desc, Tool
-
-if TYPE_CHECKING:
-    from ..execution_context import ExecutionContext
 
 # =============================================================================
 # Todo Data Classes

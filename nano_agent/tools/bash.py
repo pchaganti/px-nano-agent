@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 from ..data_structures import TextContent
+from ..execution_context import ExecutionContext
 from .base import Desc, Tool
-
-if TYPE_CHECKING:
-    from ..execution_context import ExecutionContext
 
 
 @dataclass

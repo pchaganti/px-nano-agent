@@ -9,13 +9,11 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, ClassVar
+from typing import Annotated, ClassVar
 
 from ..data_structures import TextContent
+from ..execution_context import ExecutionContext
 from .base import Desc, Tool, TruncationConfig
-
-if TYPE_CHECKING:
-    from ..execution_context import ExecutionContext
 
 # =============================================================================
 # Module-level state for Python tool

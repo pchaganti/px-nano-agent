@@ -5,13 +5,11 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 from ..data_structures import TextContent
+from ..execution_context import ExecutionContext
 from .base import Desc, Tool
-
-if TYPE_CHECKING:
-    from ..execution_context import ExecutionContext
 
 
 def _find_match_line(content: str, old_string: str) -> tuple[int, int]:

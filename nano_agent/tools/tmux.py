@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar, TypeAlias
+from typing import Annotated, Any, ClassVar, TypeAlias
 
 from ..data_structures import TextContent
+from ..execution_context import ExecutionContext
 from .base import Desc, Tool, TruncationConfig
-
-if TYPE_CHECKING:
-    from ..execution_context import ExecutionContext
 
 TmuxServer: TypeAlias = Any
 TmuxSession: TypeAlias = Any
