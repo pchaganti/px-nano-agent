@@ -13,7 +13,6 @@ from nano_agent.cancellation import CancellationChoice, ToolExecutionBatch
 from .elements import (
     CancellationMenu,
     ConfirmPrompt,
-    ElementManager,
     FooterElementManager,
     FooterInput,
     MenuSelect,
@@ -35,8 +34,7 @@ class InputController:
     """
 
     footer: TerminalFooter = field(default_factory=TerminalFooter)
-    elements: FooterElementManager | None = field(default=None, init=False, repr=False)
-    fallback_elements: ElementManager = field(default_factory=ElementManager)
+    elements: FooterElementManager = field(init=False, repr=False)
     on_escape: Callable[[], None] | None = None
     on_toggle_auto_accept: Callable[[], None] | None = None
 
@@ -188,23 +186,13 @@ class InputController:
 
             history_file = os.path.expanduser("~/.nano-cli-history")
             try:
-                if self.elements:
-                    text = await self.elements.run(
-                        FooterInput(
-                            prompt=prompt,
-                            history_file=history_file,
-                            on_toggle_auto_accept=self.on_toggle_auto_accept,
-                        )
+                text = await self.elements.run(
+                    FooterInput(
+                        prompt=prompt,
+                        history_file=history_file,
+                        on_toggle_auto_accept=self.on_toggle_auto_accept,
                     )
-                else:
-                    # Fallback if elements not initialized
-                    text = await self.fallback_elements.run(
-                        FooterInput(
-                            prompt=prompt,
-                            history_file=history_file,
-                            on_toggle_auto_accept=self.on_toggle_auto_accept,
-                        )
-                    )
+                )
             finally:
                 # Restart raw reader
                 if was_running and self._reader:
@@ -219,11 +207,7 @@ class InputController:
     ) -> bool | None:
         """Prompt for confirmation."""
         preview_lines = list(preview) if preview else []
-        if self.elements:
-            return await self.elements.run(
-                ConfirmPrompt(message=message, preview_lines=preview_lines)
-            )
-        return await self.fallback_elements.run(
+        return await self.elements.run(
             ConfirmPrompt(message=message, preview_lines=preview_lines)
         )
 
@@ -231,11 +215,7 @@ class InputController:
         self, title: str, options: list[str], *, multi_select: bool = False
     ) -> str | list[str] | None:
         """Prompt for selection from a list."""
-        if self.elements:
-            return await self.elements.run(
-                MenuSelect(title=title, options=options, multi_select=multi_select)
-            )
-        return await self.fallback_elements.run(
+        return await self.elements.run(
             MenuSelect(title=title, options=options, multi_select=multi_select)
         )
 
@@ -250,6 +230,4 @@ class InputController:
         Returns:
             User's choice for how to proceed, or None if cancelled
         """
-        if self.elements:
-            return await self.elements.run(CancellationMenu(batch=batch))
-        return await self.fallback_elements.run(CancellationMenu(batch=batch))
+        return await self.elements.run(CancellationMenu(batch=batch))
