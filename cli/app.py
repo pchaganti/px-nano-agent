@@ -72,6 +72,8 @@ from nano_agent.tools import (
 )
 
 from .commands import CommandContext, CommandRouter
+from .config import load_cli_config, save_cli_config
+from . import display
 from .elements.terminal import ANSI
 from .input_controller import InputController
 from .mapper import DAGMessageMapper
@@ -206,6 +208,8 @@ class TerminalApp:
     message_list: MessageList = field(default_factory=MessageList)
     # Auto-accept mode: when enabled, automatically confirms edit operations
     auto_accept: bool = False
+    # UI color scheme: "dark" or "light"
+    color_scheme: str = "dark"
     # Accumulated token stats
     total_input_tokens: int = 0
     total_output_tokens: int = 0
@@ -222,6 +226,8 @@ class TerminalApp:
 
     def __post_init__(self) -> None:
         """Initialize tools after dataclass creation."""
+        # Apply stored color scheme before rendering any messages
+        display.set_color_scheme(self.color_scheme)
         if not self.tools:
             self.tools = [
                 BashTool(),
@@ -294,6 +300,17 @@ class TerminalApp:
         before the app started.
         """
         ANSI.set_mark()
+
+    def _set_color_scheme(self, scheme: str) -> bool:
+        """Set the UI color scheme and return True if applied."""
+        if not display.set_color_scheme(scheme):
+            return False
+        self.color_scheme = scheme.strip().lower()
+        # Persist to config
+        config = load_cli_config()
+        config["color_scheme"] = self.color_scheme
+        save_cli_config(config)
+        return True
 
     def _sync_status_to_footer(self) -> None:
         """Sync current state to footer status bar."""
@@ -620,6 +637,7 @@ class TerminalApp:
             render_history=self.render_history,
             clear_and_reset=_clear_and_reset,
             refresh_token=self._refresh_token,
+            set_color_scheme=self._set_color_scheme,
         )
         should_continue, messages = await self.command_router.handle(command, ctx)
         self.dag = ctx.dag
@@ -1528,6 +1546,9 @@ def main() -> None:
     use_gemini = args.gemini is not None and not use_codex
     use_fireworks = args.fireworks is not None and not use_codex and not use_gemini
 
+    config = load_cli_config()
+    initial_scheme = str(config.get("color_scheme", "dark"))
+
     app = TerminalApp(
         use_codex=use_codex,
         codex_model=args.codex or "gpt-5.2-codex",
@@ -1539,6 +1560,7 @@ def main() -> None:
         thinking_budget=args.thinking_budget,
         debug=args.debug,
         continue_session=args.continue_session,
+        color_scheme=initial_scheme,
     )
     try:
         asyncio.run(app.run())

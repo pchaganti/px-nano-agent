@@ -6,6 +6,8 @@ for display in Textual's RichLog widget.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+import os
 from typing import Iterable, Iterator, TypeVar
 
 from rich import box
@@ -25,6 +27,134 @@ from rich.table import Table
 from rich.text import Text
 
 T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class StylePalette:
+    """Color palette for UI elements."""
+
+    user_message: str
+    diff_remove: str
+    diff_add: str
+    diff_context: str
+    permission_header: str
+    permission_file: str
+    permission_note: str
+    permission_prompt: str
+    permission_preview_remove: str
+    permission_preview_add: str
+    permission_preview_header: str
+    permission_preview_context: str
+    thinking_label: str
+    thinking_text: str
+    system: str
+    error_prefix: str
+    error_text: str
+
+
+_PALETTES: dict[str, StylePalette] = {
+    "dark": StylePalette(
+        user_message="on grey30",
+        diff_remove="on dark_red",
+        diff_add="on dark_green",
+        diff_context="dim",
+        permission_header="yellow bold",
+        permission_file="cyan",
+        permission_note="yellow dim",
+        permission_prompt="yellow dim",
+        permission_preview_remove="white on rgb(80,0,0)",
+        permission_preview_add="white on rgb(0,60,0)",
+        permission_preview_header="cyan bold",
+        permission_preview_context="dim",
+        thinking_label="magenta italic",
+        thinking_text="dim italic",
+        system="dim",
+        error_prefix="red bold",
+        error_text="red",
+    ),
+    "light": StylePalette(
+        user_message="black on rgb(220,235,255)",
+        diff_remove="black on rgb(255,210,210)",
+        diff_add="black on rgb(210,255,210)",
+        diff_context="grey30",
+        permission_header="dark_orange3 bold",
+        permission_file="blue",
+        permission_note="grey30",
+        permission_prompt="grey30",
+        permission_preview_remove="black on rgb(255,220,220)",
+        permission_preview_add="black on rgb(220,255,220)",
+        permission_preview_header="blue bold",
+        permission_preview_context="grey30",
+        thinking_label="dark_magenta italic",
+        thinking_text="grey30 italic",
+        system="grey30",
+        error_prefix="red bold",
+        error_text="red3",
+    ),
+}
+
+_current_palette = _PALETTES["dark"]
+_last_auto_detection: dict[str, str] = {}
+
+
+def _detect_auto_scheme() -> str:
+    """Detect light/dark scheme from environment hints."""
+    colorfgbg = os.environ.get("COLORFGBG")
+    term_program = os.environ.get("TERM_PROGRAM")
+    colorterm = os.environ.get("COLORTERM")
+    term = os.environ.get("TERM")
+    _last_auto_detection.clear()
+    if term_program:
+        _last_auto_detection["TERM_PROGRAM"] = term_program
+    if colorterm:
+        _last_auto_detection["COLORTERM"] = colorterm
+    if term:
+        _last_auto_detection["TERM"] = term
+    if colorfgbg:
+        _last_auto_detection["COLORFGBG"] = colorfgbg
+        parts = [p for p in colorfgbg.split(";") if p.strip().isdigit()]
+        if parts:
+            try:
+                bg = int(parts[-1])
+                _last_auto_detection["bg_index"] = str(bg)
+                # 0-7 are standard dark colors, 8-15 are bright
+                return "light" if bg >= 7 else "dark"
+            except ValueError:
+                _last_auto_detection["error"] = "invalid COLORFGBG value"
+    else:
+        _last_auto_detection["reason"] = "COLORFGBG not set"
+    _last_auto_detection["fallback"] = "dark"
+    return "dark"
+
+
+def set_color_scheme(scheme: str) -> bool:
+    """Set the active color scheme for display formatting."""
+    normalized = scheme.strip().lower()
+    if normalized == "auto":
+        normalized = _detect_auto_scheme()
+    if normalized not in _PALETTES:
+        return False
+    global _current_palette
+    _current_palette = _PALETTES[normalized]
+    return True
+
+
+def get_color_scheme() -> str:
+    """Return the active color scheme name."""
+    for name, palette in _PALETTES.items():
+        if palette is _current_palette:
+            return name
+    return "dark"
+
+
+def get_last_auto_detection() -> dict[str, str]:
+    """Return details from the most recent auto detection."""
+    return dict(_last_auto_detection)
+
+
+def get_palette() -> StylePalette:
+    """Return the active palette."""
+    return _current_palette
 
 
 def _loop_first(iterable: Iterable[T]) -> Iterator[tuple[bool, T]]:
@@ -229,16 +359,17 @@ class LimitedMarkdown(Markdown):
 
 def format_user_message(text: str) -> RenderableType:
     """Format a user message with prompt prefix and subtle background."""
+    palette = get_palette()
     prompt = "> "
     lines = text.split("\n")
     if not lines:
-        return Text(prompt, style="on grey30")
+        return Text(prompt, style=palette.user_message)
     # Only first line gets the prompt prefix, subsequent lines have no indent
     # (matches footer input rendering behavior)
     padded = [f"{prompt}{lines[0]}"]
     for line in lines[1:]:
         padded.append(line)
-    return Text("\n".join(padded), style="on grey30")
+    return Text("\n".join(padded), style=palette.user_message)
 
 
 def format_assistant_message(text: str) -> RenderableType:
@@ -251,11 +382,14 @@ def format_assistant_message(text: str) -> RenderableType:
     - Lists (ordered and unordered)
     - Links and more
     """
-    return LimitedMarkdown(text.rstrip(), code_theme="native")
+    scheme = get_color_scheme()
+    code_theme = "native" if scheme == "dark" else "xcode"
+    return LimitedMarkdown(text.rstrip(), code_theme=code_theme)
 
 
 def format_thinking_message(thinking: str) -> Text:
     """Format thinking content with magenta/dim styling."""
+    palette = get_palette()
     # Truncate long thinking content
     lines = thinking.split("\n")
     max_lines = 15
@@ -268,8 +402,8 @@ def format_thinking_message(thinking: str) -> Text:
         content = thinking
 
     result = Text()
-    result.append("Thinking: ", style="magenta italic")
-    result.append(content, style="dim italic")
+    result.append("Thinking: ", style=palette.thinking_label)
+    result.append(content, style=palette.thinking_text)
     return result
 
 
@@ -298,6 +432,7 @@ def format_tool_call(name: str, params: dict[str, object]) -> Text:
 
 def format_tool_result(result: str, is_error: bool = False) -> Text:
     """Format a tool result with diff-aware styling."""
+    palette = get_palette()
     lines = result.split("\n")
     max_lines = 100
     if len(lines) > max_lines:
@@ -313,16 +448,16 @@ def format_tool_result(result: str, is_error: bool = False) -> Text:
 
     if is_error:
         content = "\n".join(lines)
-        result_text.append(content, style="red dim")
+        result_text.append(content, style=palette.error_text)
     else:
         # Diff-aware coloring
         for i, line in enumerate(lines):
             if line.startswith("  -  "):
-                result_text.append(line, style="on dark_red")
+                result_text.append(line, style=palette.diff_remove)
             elif line.startswith("  +  "):
-                result_text.append(line, style="on dark_green")
+                result_text.append(line, style=palette.diff_add)
             else:
-                result_text.append(line, style="dim")
+                result_text.append(line, style=palette.diff_context)
             if i < len(lines) - 1:
                 result_text.append("\n")
 
@@ -337,16 +472,18 @@ def format_tool_result(result: str, is_error: bool = False) -> Text:
 
 def format_system_message(text: str) -> Text:
     """Format a system message with dim styling."""
+    palette = get_palette()
     result = Text()
-    result.append(f"[{text}]", style="dim")
+    result.append(f"[{text}]", style=palette.system)
     return result
 
 
 def format_error_message(text: str) -> Text:
     """Format an error message with red styling."""
+    palette = get_palette()
     result = Text()
-    result.append("Error: ", style="red bold")
-    result.append(text, style="red")
+    result.append("Error: ", style=palette.error_prefix)
+    result.append(text, style=palette.error_text)
     return result
 
 

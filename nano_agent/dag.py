@@ -447,6 +447,43 @@ class DAG:
             _tools=tools_tuple,
         )
 
+    def append_to(
+        self,
+        data: NodeData,
+        *,
+        heads: Sequence[Node],
+    ) -> DAG:
+        """Append data to a specific subset of heads.
+
+        Args:
+            data: NodeData to append
+            heads: Subset of current heads to append to
+
+        Returns:
+            New DAG instance with only the selected heads advanced
+
+        Raises:
+            ValueError: If heads is empty or contains nodes not in current heads
+        """
+        if not heads:
+            raise ValueError("heads must be a non-empty subset of current heads")
+        if not self._heads:
+            raise ValueError("Cannot append_to on an empty DAG")
+
+        head_ids = {h.id for h in self._heads}
+        selected_ids = {h.id for h in heads}
+        if not selected_ids.issubset(head_ids):
+            raise ValueError("heads must be a subset of current heads")
+
+        new_heads: list[Node] = []
+        for head in self._heads:
+            if head.id in selected_ids:
+                new_heads.append(head.child(data))
+            else:
+                new_heads.append(head)
+
+        return self._with_heads(tuple(new_heads))
+
     # -------------------------------------------------------------------------
     # Core builder methods
     # -------------------------------------------------------------------------
@@ -485,8 +522,12 @@ class DAG:
             )
             for t in tools
         ]
-        new_heads = self._append_to_heads(ToolDefinitions(tools=tool_defs))
-        return self._with_heads(new_heads, tools=tools)
+        data = ToolDefinitions(tools=tool_defs)
+        if not self._heads:
+            node = Node.root(data)
+            return self._with_heads((node,), tools=tools)
+        new_dag = self.append_to(data, heads=self._heads)
+        return new_dag._with_heads(new_dag._heads, tools=tools)
 
     def user(
         self, content: str | ContentBlock | Sequence[ContentBlock], *more: ContentBlock
@@ -508,7 +549,10 @@ class DAG:
         if isinstance(content, str):
             if more:
                 raise ValueError("Cannot mix string with ContentBlock arguments")
-            return self._with_heads(self._append_to_heads(Message(Role.USER, content)))
+            data = Message(Role.USER, content)
+            if not self._heads:
+                return self._with_heads((Node.root(data),))
+            return self.append_to(data, heads=self._heads)
         elif isinstance(content, Sequence) and not isinstance(content, str):
             # content is a sequence of blocks (backward compat)
             if more:
@@ -522,7 +566,10 @@ class DAG:
                     (TextContent, ThinkingContent, ToolUseContent, ToolResultContent),
                 ):
                     blocks.append(block)
-            return self._with_heads(self._append_to_heads(Message(Role.USER, blocks)))
+            data = Message(Role.USER, blocks)
+            if not self._heads:
+                return self._with_heads((Node.root(data),))
+            return self.append_to(data, heads=self._heads)
         else:
             # content is a single ContentBlock
             if not isinstance(
@@ -532,9 +579,10 @@ class DAG:
                 raise TypeError("Invalid content type for user message")
             block = content
             all_content: list[ContentBlock] = [block, *more]
-            return self._with_heads(
-                self._append_to_heads(Message(Role.USER, all_content))
-            )
+            data = Message(Role.USER, all_content)
+            if not self._heads:
+                return self._with_heads((Node.root(data),))
+            return self.append_to(data, heads=self._heads)
 
     def assistant(
         self, content: str | ContentBlock | Sequence[ContentBlock], *more: ContentBlock
@@ -556,9 +604,10 @@ class DAG:
         if isinstance(content, str):
             if more:
                 raise ValueError("Cannot mix string with ContentBlock arguments")
-            return self._with_heads(
-                self._append_to_heads(Message(Role.ASSISTANT, content))
-            )
+            data = Message(Role.ASSISTANT, content)
+            if not self._heads:
+                return self._with_heads((Node.root(data),))
+            return self.append_to(data, heads=self._heads)
         elif isinstance(content, Sequence) and not isinstance(content, str):
             # content is a sequence of blocks (backward compat)
             if more:
@@ -572,9 +621,10 @@ class DAG:
                     (TextContent, ThinkingContent, ToolUseContent, ToolResultContent),
                 ):
                     blocks.append(block)
-            return self._with_heads(
-                self._append_to_heads(Message(Role.ASSISTANT, blocks))
-            )
+            data = Message(Role.ASSISTANT, blocks)
+            if not self._heads:
+                return self._with_heads((Node.root(data),))
+            return self.append_to(data, heads=self._heads)
         else:
             # content is a single ContentBlock
             if not isinstance(
@@ -584,9 +634,10 @@ class DAG:
                 raise TypeError("Invalid content type for assistant message")
             block = content
             all_content: list[ContentBlock] = [block, *more]
-            return self._with_heads(
-                self._append_to_heads(Message(Role.ASSISTANT, all_content))
-            )
+            data = Message(Role.ASSISTANT, all_content)
+            if not self._heads:
+                return self._with_heads((Node.root(data),))
+            return self.append_to(data, heads=self._heads)
 
     def tool_result(self, *tool_results: ToolResultContent) -> DAG:
         """Add tool results.
@@ -597,9 +648,10 @@ class DAG:
         Returns:
             New DAG instance with tool results added
         """
-        return self._with_heads(
-            self._append_to_heads(Message(Role.USER, list(tool_results)))
-        )
+        data = Message(Role.USER, list(tool_results))
+        if not self._heads:
+            return self._with_heads((Node.root(data),))
+        return self.append_to(data, heads=self._heads)
 
     def sub_graph(self, sub_graph: SubGraph) -> DAG:
         """Add a sub-graph node (encapsulated sub-agent execution).
@@ -610,7 +662,9 @@ class DAG:
         Returns:
             New DAG instance with sub-graph added
         """
-        return self._with_heads(self._append_to_heads(sub_graph))
+        if not self._heads:
+            return self._with_heads((Node.root(sub_graph),))
+        return self.append_to(sub_graph, heads=self._heads)
 
     # -------------------------------------------------------------------------
     # Tool execution helpers (the key innovation)
@@ -740,14 +794,13 @@ class DAG:
             New DAG instance with stop reason added
         """
         usage_totals = self.head.get_usage_totals()
-        return self._with_heads(
-            self._append_to_heads(
-                StopReason(
-                    reason=response.stop_reason or "unknown",
-                    usage=usage_totals,
-                )
-            )
+        data = StopReason(
+            reason=response.stop_reason or "unknown",
+            usage=usage_totals,
         )
+        if not self._heads:
+            return self._with_heads((Node.root(data),))
+        return self.append_to(data, heads=self._heads)
 
     # -------------------------------------------------------------------------
     # Properties and accessors
@@ -852,12 +905,8 @@ class DAG:
             # No heads yet - create root
             node = Node.root(data)
             return (node,)
-        elif len(self._heads) == 1:
-            # Single head - simple child
-            return (self._heads[0].child(data),)
-        else:
-            # Multiple heads - append to each (maintains parallelism)
-            return tuple(h.child(data) for h in self._heads)
+        # Delegate to append_to for consistent head selection logic
+        return self.append_to(data, heads=self._heads).heads
 
     def __repr__(self) -> str:
         """Return string representation of DAG."""
