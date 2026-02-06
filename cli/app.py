@@ -81,6 +81,7 @@ from .message_factory import (
     add_text_to_assistant,
     add_thinking_to_assistant,
     create_assistant_message,
+    create_command_message,
     create_error_message,
     create_permission_message,
     create_question_message,
@@ -541,6 +542,10 @@ class TerminalApp:
             True if refresh successful, False otherwise.
         """
         try:
+            # Pause footer so async_get_config's stderr output doesn't
+            # corrupt the terminal region.  add_message() below will
+            # resume the footer on every exit path.
+            self.input_controller.pause_footer()
             # Use async version directly - no thread pool overhead
             await async_get_config(timeout=30)
 
@@ -1353,26 +1358,10 @@ class TerminalApp:
             # This ensures consistent terminal behavior throughout the app
             await self.input_controller.start()
 
-            # Detect terminal capabilities and set bookmark if supported
-            ANSI.detect_osc_1337_support()
             self._set_bookmark()
 
             # Add welcome message
             self.add_message(create_welcome_message())
-
-            # Report terminal capabilities
-            if ANSI.supports_osc_1337():
-                self.add_message(
-                    create_system_message(
-                        "Terminal: OSC 1337 supported (iTerm2/WezTerm)"
-                    )
-                )
-            else:
-                self.add_message(
-                    create_system_message(
-                        "Terminal: OSC 1337 not supported, using fallback"
-                    )
-                )
 
             # Initialize API
             if not await self.initialize_api():
@@ -1432,6 +1421,12 @@ class TerminalApp:
 
                 if not user_input:
                     continue
+
+                # For slash commands, clear stale footer content immediately.
+                # (User messages use the seamless transition in add_message() instead.)
+                if user_input.startswith("/"):
+                    self.input_controller.footer.clear_content()
+                    self.add_message(create_command_message(user_input))
 
                 # Handle async commands (need special handling)
                 cmd = user_input.lower().strip()
