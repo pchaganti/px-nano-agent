@@ -13,10 +13,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Never, TypeAlias, TypedDict
-
-if TYPE_CHECKING:
-    from .dag import DAG
+from typing import Never, NotRequired, Required, TypeAlias, TypedDict
 
 # =============================================================================
 # JSON Type Aliases
@@ -70,11 +67,18 @@ class JSONSchema(TypedDict, total=False):
 # =============================================================================
 
 
+class CacheControl(TypedDict):
+    """Anthropic prompt caching control."""
+
+    type: str  # "ephemeral"
+
+
 class TextContentDict(TypedDict):
     """Serialized form of TextContent."""
 
     type: str
     text: str
+    cache_control: NotRequired[CacheControl]
 
 
 class ThinkingContentDict(TypedDict, total=False):
@@ -83,6 +87,7 @@ class ThinkingContentDict(TypedDict, total=False):
     type: str
     thinking: str
     signature: str
+    cache_control: CacheControl
     # OpenAI reasoning format
     id: str
     encrypted_content: str
@@ -96,6 +101,7 @@ class ToolUseContentDict(TypedDict):
     id: str
     name: str
     input: dict[str, JSONValue] | None
+    cache_control: NotRequired[CacheControl]
 
 
 class ToolResultContentDict(TypedDict):
@@ -105,6 +111,7 @@ class ToolResultContentDict(TypedDict):
     tool_use_id: str
     content: list[TextContentDict]
     is_error: bool
+    cache_control: NotRequired[CacheControl]
 
 
 # Forward reference for MessageDict (content can be string or list of content blocks)
@@ -662,84 +669,6 @@ class SubGraph:
             depth=_safe_int(data.get("depth", 0)),
         )
 
-    @classmethod
-    def from_dag(
-        cls,
-        dag: "DAG",  # Forward reference - resolved at runtime
-        tool_name: str,
-        tool_use_id: str,
-        summary: str = "",
-        depth: int = 0,
-    ) -> "SubGraph":
-        """Create SubGraph from a DAG instance.
-
-        Args:
-            dag: The sub-agent's completed DAG
-            tool_name: Name of the tool that spawned this sub-agent
-            tool_use_id: ID of the tool call
-            summary: Summary of the sub-agent's results
-            depth: Nesting depth of this sub-agent
-
-        Returns:
-            SubGraph containing serialized DAG
-        """
-        # Collect all nodes from DAG
-        all_nodes: dict[str, object] = {}
-        head_ids: list[str] = []
-
-        if dag._heads:
-            for head in dag._heads:
-                head_ids.append(head.id)
-                for node in head.ancestors():
-                    all_nodes[node.id] = node.to_dict()
-
-        return cls(
-            tool_name=tool_name,
-            tool_use_id=tool_use_id,
-            system_prompt=dag.get_system_prompt() if dag._heads else "",
-            nodes=all_nodes,
-            head_ids=head_ids,
-            summary=summary,
-            depth=depth,
-        )
-
-    def to_dag(self) -> "DAG":
-        """Reconstruct DAG from serialized nodes.
-
-        Returns:
-            DAG instance with reconstructed nodes
-        """
-        # Import here to avoid circular dependency
-        from .dag import DAG, Node
-
-        if not self.nodes:
-            return DAG()
-
-        # Reconstruct nodes
-        node_map: dict[str, Node] = {}
-        remaining = dict(self.nodes)
-
-        while remaining:
-            ready = [
-                nid
-                for nid, ndata in remaining.items()
-                if isinstance(ndata, dict)
-                and all(pid in node_map for pid in ndata.get("parent_ids", []))
-            ]
-            if not ready:
-                raise ValueError("Cycle or missing parents in SubGraph")
-            for nid in ready:
-                ndata = remaining.pop(nid)
-                if isinstance(ndata, dict):
-                    node_map[nid] = Node._from_dict(ndata, node_map)
-
-        heads = [node_map[hid] for hid in self.head_ids if hid in node_map]
-        if not heads and node_map:
-            # Find leaf nodes
-            has_children = {p.id for n in node_map.values() for p in n.parents}
-            heads = [n for n in node_map.values() if n.id not in has_children]
-
-        return DAG(_heads=tuple(heads))
 
 
 # =============================================================================
