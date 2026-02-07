@@ -25,8 +25,8 @@ from .message_factory import (
     add_text_to_assistant,
     add_thinking_to_assistant,
     create_assistant_message,
+    create_command_message,
     create_error_message,
-    create_input_prompt_message,
     create_permission_message,
     create_system_message,
     create_tool_call_message,
@@ -35,7 +35,7 @@ from .message_factory import (
     create_welcome_message,
 )
 from .message_list import MessageList
-from .messages import InputEvent, MessageStatus, RenderItem, UIMessage
+from .messages import MessageStatus, RenderItem, UIMessage
 
 __all__ = [
     # Main app
@@ -47,12 +47,12 @@ __all__ = [
     "UIMessage",
     "RenderItem",
     "MessageStatus",
-    "InputEvent",
     "MessageList",
     # Message factory functions
     "create_welcome_message",
     "create_system_message",
     "create_user_message",
+    "create_command_message",
     "create_assistant_message",
     "add_thinking_to_assistant",
     "add_text_to_assistant",
@@ -60,5 +60,4 @@ __all__ = [
     "create_tool_result_message",
     "create_error_message",
     "create_permission_message",
-    "create_input_prompt_message",
 ]

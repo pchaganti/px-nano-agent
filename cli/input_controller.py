@@ -18,7 +18,7 @@ from .elements import (
     MenuSelect,
     TerminalFooter,
 )
-from .elements.terminal import RawInputReader
+from .elements.terminal import ANSI, RawInputReader
 
 
 @dataclass
@@ -81,6 +81,9 @@ class InputController:
         self._reader = RawInputReader()
         self._reader.start()
         self._running = True
+        # Hide terminal cursor for entire app lifetime
+        # (FooterInput renders its own cursor via reverse video)
+        ANSI.hide_cursor()
         # Activate footer for status bar display
         self.footer.activate()
         return True
@@ -101,6 +104,8 @@ class InputController:
         self._running = False
         # Deactivate footer even if we weren't running (prompt may have activated it)
         self.footer.deactivate()
+        # Restore terminal cursor on exit
+        ANSI.show_cursor()
 
     async def _refresh_loop(self) -> None:
         """Background task to refresh spinner animation during activity."""

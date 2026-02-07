@@ -526,7 +526,7 @@ class TerminalRegion:
         self._active = True
         self._cursor_at_line = 0
 
-        # Hide terminal cursor (we render our own cursor glyph)
+        # Re-hide cursor in case external code (e.g. Rich console) showed it
         ANSI.hide_cursor()
         # Clear current line and use it as region start
         ANSI.clear_line()
@@ -613,9 +613,6 @@ class TerminalRegion:
         # Return cursor to region start (cleared) without adding new lines
         self._move_to_region_start()
         ANSI.clear_line()
-
-        # Show terminal cursor again
-        ANSI.show_cursor()
 
         self._active = False
         self.num_lines = 0

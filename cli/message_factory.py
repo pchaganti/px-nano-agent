@@ -66,6 +66,22 @@ def create_user_message(text: str) -> UIMessage:
     return msg
 
 
+def create_command_message(text: str) -> UIMessage:
+    """Create a command input message (display-only, not sent to model).
+
+    Args:
+        text: The command text (e.g. "/help", "/save foo.json")
+
+    Returns:
+        UIMessage configured as a command message
+    """
+    msg = UIMessage(message_type="command")
+    msg.append(renderer.user(text))
+    msg.append_newline()
+    msg.status = MessageStatus.COMPLETE
+    return msg
+
+
 def create_assistant_message() -> UIMessage:
     """Create an assistant response message (initially empty for streaming).
 
@@ -235,16 +251,5 @@ def create_permission_message(
                 msg.append(Text(line, style=palette.permission_preview_context))
         msg.append_newline()
 
-    msg.status = MessageStatus.ACTIVE
-    return msg
-
-
-def create_input_prompt_message() -> UIMessage:
-    """Create an input prompt message (for user query input).
-
-    Returns:
-        UIMessage configured as an input prompt message
-    """
-    msg = UIMessage(message_type="input")
     msg.status = MessageStatus.ACTIVE
     return msg

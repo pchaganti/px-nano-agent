@@ -88,12 +88,13 @@ class FooterInput(ActiveElement[str | None]):
         if not self.history_file or not entry.strip():
             return
 
-        # Add to in-memory history
-        if entry not in self._history:
-            self._history.append(entry)
-            # Keep last 1000 entries
-            if len(self._history) > 1000:
-                self._history = self._history[-1000:]
+        # Add to in-memory history (move to end if duplicate)
+        if entry in self._history:
+            self._history.remove(entry)
+        self._history.append(entry)
+        # Keep last 1000 entries
+        if len(self._history) > 1000:
+            self._history = self._history[-1000:]
 
         # Save to file
         path = Path(os.path.expanduser(self.history_file))
