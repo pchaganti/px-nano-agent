@@ -326,3 +326,133 @@ class TestInputEventHandling:
 
         fi.handle_input(InputEvent(key="End", char=None))
         assert fi.cursor_pos == 5
+
+
+class TestHistory:
+    """Tests for input history save/load and navigation."""
+
+    def test_save_history_adds_entry(self) -> None:
+        """Saving history should add entry to in-memory list."""
+        fi = FooterInput()
+        fi._save_history("hello")
+        assert fi._history == ["hello"]
+
+    def test_save_history_deduplicates(self) -> None:
+        """Duplicate entries should not create duplicates in history."""
+        fi = FooterInput()
+        fi._save_history("hello")
+        fi._save_history("world")
+        fi._save_history("hello")
+        assert fi._history.count("hello") == 1
+
+    def test_save_history_moves_duplicate_to_end(self) -> None:
+        """Re-saving an existing entry should move it to the most recent position."""
+        fi = FooterInput()
+        fi._save_history("first")
+        fi._save_history("second")
+        fi._save_history("third")
+        fi._save_history("first")
+        assert fi._history == ["second", "third", "first"]
+
+    def test_save_history_skips_empty(self) -> None:
+        """Empty or whitespace-only entries should not be saved."""
+        fi = FooterInput()
+        fi._save_history("")
+        fi._save_history("   ")
+        assert fi._history == []
+
+    def test_history_prev_returns_most_recent_first(self) -> None:
+        """Up-arrow should return the most recent entry first."""
+        fi = FooterInput()
+        fi._history = ["old", "newer", "newest"]
+        fi._history_prev()
+        assert fi.buffer == "newest"
+
+    def test_history_prev_walks_backwards(self) -> None:
+        """Multiple up-arrows should walk from newest to oldest."""
+        fi = FooterInput()
+        fi._history = ["first", "second", "third"]
+        fi._history_prev()
+        assert fi.buffer == "third"
+        fi._history_prev()
+        assert fi.buffer == "second"
+        fi._history_prev()
+        assert fi.buffer == "first"
+
+    def test_history_prev_stops_at_oldest(self) -> None:
+        """Up-arrow should stop at the oldest entry."""
+        fi = FooterInput()
+        fi._history = ["only"]
+        fi._history_prev()
+        fi._history_prev()
+        fi._history_prev()
+        assert fi.buffer == "only"
+
+    def test_history_next_returns_to_current_input(self) -> None:
+        """Down-arrow past newest should restore the original buffer."""
+        fi = FooterInput()
+        fi.buffer = "typing..."
+        fi.cursor_pos = 9
+        fi._history = ["old", "recent"]
+        fi._history_prev()
+        assert fi.buffer == "recent"
+        fi._history_next()
+        assert fi.buffer == "typing..."
+
+    def test_history_navigation_roundtrip(self) -> None:
+        """Up then down should return to original position."""
+        fi = FooterInput()
+        fi.buffer = ""
+        fi._history = ["a", "b", "c"]
+        fi._history_prev()  # c
+        fi._history_prev()  # b
+        fi._history_next()  # c
+        assert fi.buffer == "c"
+        fi._history_next()  # back to empty
+        assert fi.buffer == ""
+
+    def test_history_empty_does_nothing(self) -> None:
+        """Up-arrow with no history should not change buffer."""
+        fi = FooterInput()
+        fi.buffer = "current"
+        fi._history_prev()
+        assert fi.buffer == "current"
+
+    def test_duplicate_reentry_appears_on_first_up(self) -> None:
+        """After re-saving an old entry, it should appear on first up-arrow.
+
+        This is the exact bug scenario: /renew was deep in history,
+        re-typing it should move it to most recent so first up-arrow finds it.
+        """
+        fi = FooterInput()
+        fi._history = ["/renew", "/help", "/save", "/clear"]
+        fi._save_history("/renew")
+        assert fi._history == ["/help", "/save", "/clear", "/renew"]
+        fi._history_prev()
+        assert fi.buffer == "/renew"
+
+    def test_save_and_load_roundtrip(self, tmp_path) -> None:
+        """History should survive save to file and load by a new instance."""
+        history_file = str(tmp_path / "test_history")
+        fi1 = FooterInput(history_file=history_file)
+        fi1._save_history("first")
+        fi1._save_history("second")
+        fi1._save_history("third")
+
+        fi2 = FooterInput(history_file=history_file)
+        fi2._load_history()
+        assert fi2._history == ["first", "second", "third"]
+
+    def test_save_and_load_preserves_reorder(self, tmp_path) -> None:
+        """Reordered duplicate should persist correctly across instances."""
+        history_file = str(tmp_path / "test_history")
+        fi1 = FooterInput(history_file=history_file)
+        fi1._save_history("alpha")
+        fi1._save_history("beta")
+        fi1._save_history("alpha")  # move to end
+
+        fi2 = FooterInput(history_file=history_file)
+        fi2._load_history()
+        assert fi2._history == ["beta", "alpha"]
+        fi2._history_prev()
+        assert fi2.buffer == "alpha"

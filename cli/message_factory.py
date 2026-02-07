@@ -12,6 +12,7 @@ from rich.text import Text
 
 from .messages import MessageStatus, RenderItem, UIMessage
 from .rendering import MessageRenderer
+from . import display
 
 renderer = MessageRenderer()
 
@@ -59,6 +60,22 @@ def create_user_message(text: str) -> UIMessage:
         UIMessage configured as a user message
     """
     msg = UIMessage(message_type="user")
+    msg.append(renderer.user(text))
+    msg.append_newline()
+    msg.status = MessageStatus.COMPLETE
+    return msg
+
+
+def create_command_message(text: str) -> UIMessage:
+    """Create a command input message (display-only, not sent to model).
+
+    Args:
+        text: The command text (e.g. "/help", "/save foo.json")
+
+    Returns:
+        UIMessage configured as a command message
+    """
+    msg = UIMessage(message_type="command")
     msg.append(renderer.user(text))
     msg.append_newline()
     msg.status = MessageStatus.COMPLETE
@@ -205,13 +222,16 @@ def create_permission_message(
     Returns:
         UIMessage configured as a permission message
     """
+    palette = display.get_palette()
     msg = UIMessage(message_type="permission")
     msg.append_newline()
-    msg.append(Text("--- Permission Required ---", style="yellow bold"))
-    msg.append(Text(f"File: {file_path}", style="cyan"))
+    msg.append(Text("--- Permission Required ---", style=palette.permission_header))
+    msg.append(Text(f"File: {file_path}", style=palette.permission_file))
     if match_count > 1:
-        msg.append(Text(f"(Replacing {match_count} occurrences)", style="yellow dim"))
-    msg.append(Text("Confirm: press y/n/Esc", style="yellow dim"))
+        msg.append(
+            Text(f"(Replacing {match_count} occurrences)", style=palette.permission_note)
+        )
+    msg.append(Text("Confirm: press y/n/Esc", style=palette.permission_prompt))
     msg.append_newline()
 
     # Display the diff preview with background colors
@@ -219,28 +239,17 @@ def create_permission_message(
         for line in preview.splitlines():
             if line.startswith("  -"):
                 # Removed line - dark red background
-                msg.append(Text(line, style="white on rgb(80,0,0)"))
+                msg.append(Text(line, style=palette.permission_preview_remove))
             elif line.startswith("  +"):
                 # Added line - dark green background
-                msg.append(Text(line, style="white on rgb(0,60,0)"))
+                msg.append(Text(line, style=palette.permission_preview_add))
             elif line.startswith("───"):
                 # Header line
-                msg.append(Text(line, style="cyan bold"))
+                msg.append(Text(line, style=palette.permission_preview_header))
             else:
                 # Context line or other
-                msg.append(Text(line, style="dim"))
+                msg.append(Text(line, style=palette.permission_preview_context))
         msg.append_newline()
 
-    msg.status = MessageStatus.ACTIVE
-    return msg
-
-
-def create_input_prompt_message() -> UIMessage:
-    """Create an input prompt message (for user query input).
-
-    Returns:
-        UIMessage configured as an input prompt message
-    """
-    msg = UIMessage(message_type="input")
     msg.status = MessageStatus.ACTIVE
     return msg

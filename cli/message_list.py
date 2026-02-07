@@ -56,20 +56,6 @@ class MessageList:
         """
         return self.messages[-1] if self.messages else None
 
-    def get_by_id(self, msg_id: str) -> UIMessage | None:
-        """Get a message by its ID.
-
-        Args:
-            msg_id: The message ID to find
-
-        Returns:
-            The message, or None if not found
-        """
-        for msg in self.messages:
-            if msg.id == msg_id:
-                return msg
-        return None
-
     def clear(self) -> None:
         """Clear all messages."""
         self.messages.clear()

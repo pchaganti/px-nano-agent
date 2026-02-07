@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Protocol
+from typing import Any
 from uuid import uuid4
 
 from rich.console import RenderableType
@@ -23,27 +23,6 @@ class MessageStatus(Enum):
     ACTIVE = "active"  # Last message, has input control
     COMPLETE = "complete"  # Frozen, cannot change
     ERROR = "error"
-
-
-@dataclass
-class InputEvent:
-    """Keyboard event passed to active message."""
-
-    key: str
-    ctrl: bool = False
-    alt: bool = False
-
-
-class InputHandler(Protocol):
-    """Protocol for handling input in active message."""
-
-    async def handle_key(self, event: InputEvent) -> bool:
-        """Handle key event. Return True if consumed."""
-        ...
-
-    def get_prompt_text(self) -> str:
-        """Return current input buffer for display."""
-        ...
 
 
 @dataclass
@@ -72,7 +51,6 @@ class UIMessage:
         id: Unique identifier for this message
         message_type: Type of message (welcome, user, assistant, tool, error, etc.)
         output_buffer: List of render items for this message
-        input_handler: Handler for input events (only active for last message)
         status: Current status of this message
         metadata: Additional metadata (tokens, timing, etc.)
     """
@@ -82,9 +60,6 @@ class UIMessage:
 
     # Output buffer - list of render items
     output_buffer: list[RenderItem] = field(default_factory=list)
-
-    # Input handling (only active for last message)
-    input_handler: InputHandler | None = None
 
     # Status
     status: MessageStatus = MessageStatus.PENDING
@@ -126,9 +101,8 @@ class UIMessage:
         self.output_buffer = [r for r in self.output_buffer if not r.is_transient]
 
     def freeze(self) -> None:
-        """Freeze this message (mark as complete, remove input handler)."""
+        """Freeze this message (mark as complete)."""
         self.status = MessageStatus.COMPLETE
-        self.input_handler = None
         self.clear_transient()
 
     def is_frozen(self) -> bool:
