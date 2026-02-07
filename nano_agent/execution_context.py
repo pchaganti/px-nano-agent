@@ -133,7 +133,7 @@ async def run_sub_agent(
         tool_use_id = f"subagent_{uuid.uuid4().hex[:12]}"
 
     # Create sub-agent DAG
-    sub_dag = DAG(system_prompt=system_prompt)
+    sub_dag = DAG().system(system_prompt)
     if tools:
         sub_dag = sub_dag.tools(*tools)
     sub_dag = sub_dag.user(user_message)

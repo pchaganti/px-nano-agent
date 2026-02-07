@@ -261,8 +261,8 @@ async def main() -> None:
     analyzer_tool = ProjectAnalyzerTool()
 
     # Create DAG with the top-level tool
-    dag = DAG(
-        system_prompt="""You are a helpful assistant with a powerful project analysis tool.
+    dag = DAG().system(
+        """You are a helpful assistant with a powerful project analysis tool.
 
 When asked to analyze a project or file, use the ProjectAnalyzer tool.
 This tool will spawn specialized sub-agents to perform comprehensive analysis."""

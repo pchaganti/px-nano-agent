@@ -24,7 +24,7 @@ class TestDAGBasics:
 
     def test_dag_with_system_prompt(self) -> None:
         """Test DAG with initial system prompt."""
-        dag = DAG(system_prompt="You are helpful.")
+        dag = DAG().system("You are helpful.")
         assert len(dag.heads) == 1
         assert len(dag.head.ancestors()) == 1
         system = dag.get_system_prompt()
@@ -39,7 +39,7 @@ class TestDAGBasics:
 
     def test_tools_method(self) -> None:
         """Test .tools() builder method."""
-        dag = DAG(system_prompt="Test")
+        dag = DAG().system("Test")
         dag = dag.tools(BashTool(), ReadTool())
 
         tool_defs = dag.get_tools()
@@ -49,7 +49,7 @@ class TestDAGBasics:
 
     def test_user_method(self) -> None:
         """Test .user() builder method."""
-        dag = DAG(system_prompt="Test")
+        dag = DAG().system("Test")
         dag = dag.user("Hello world")
 
         messages = dag.to_messages()
@@ -59,7 +59,7 @@ class TestDAGBasics:
 
     def test_assistant_method(self) -> None:
         """Test .assistant() builder method."""
-        dag = DAG(system_prompt="Test")
+        dag = DAG().system("Test")
         dag = dag.user("Hello")
         dag = dag.assistant("Hi there!")
 
@@ -70,7 +70,7 @@ class TestDAGBasics:
 
     def test_method_chaining(self) -> None:
         """Test fluent method chaining."""
-        dag = DAG(system_prompt="Test")
+        dag = DAG().system("Test")
         result = dag.tools(BashTool()).user("Hello").assistant("Hi")
 
         # Should return new DAG (immutable)
@@ -84,7 +84,7 @@ class TestDAGToolExecution:
 
     def test_execute_tools_basic(self) -> None:
         """Test basic tool execution with branching/merging."""
-        dag = DAG(system_prompt="Test")
+        dag = DAG().system("Test")
         dag = dag.user("Run command")
 
         # Simulate tool calls
@@ -104,8 +104,8 @@ class TestDAGToolExecution:
 
     def test_execute_tools_parallel(self) -> None:
         """Test parallel tool execution."""
-        dag = DAG(system_prompt="Test")
-        dag.user("Run multiple commands")
+        dag = DAG().system("Test")
+        dag = dag.user("Run multiple commands")
 
         # Multiple tool calls
         tool_calls = [
@@ -120,7 +120,7 @@ class TestDAGToolExecution:
             results.append(result)
             return TextContent(text=result)
 
-        dag.execute_tools(tool_calls, handler)
+        dag = dag.execute_tools(tool_calls, handler)
 
         # Should have executed both tools
         assert len(results) == 2
@@ -129,11 +129,11 @@ class TestDAGToolExecution:
 
     def test_execute_tools_empty_list(self) -> None:
         """Test execute_tools with empty list does nothing."""
-        dag = DAG(system_prompt="Test")
-        dag.user("Hello")
+        dag = DAG().system("Test")
+        dag = dag.user("Hello")
 
         initial_heads = len(dag.heads)
-        dag.execute_tools([], lambda x: TextContent(text="result"))
+        dag = dag.execute_tools([], lambda x: TextContent(text="result"))
 
         # Should be no-op
         assert len(dag.heads) == initial_heads
@@ -144,8 +144,7 @@ class TestDAGSerialization:
 
     def test_save_and_load(self, tmp_path: Path) -> None:
         """Test saving and loading DAG."""
-        dag = DAG(system_prompt="Test")
-        dag.tools(BashTool()).user("Hello").assistant("Hi")
+        dag = DAG().system("Test").tools(BashTool()).user("Hello").assistant("Hi")
 
         # Save
         filepath = tmp_path / "test_graph.json"
@@ -165,7 +164,7 @@ class TestDAGEdgeCases:
 
     def test_head_property_single_head(self) -> None:
         """Test .head property with single head."""
-        dag = DAG(system_prompt="Test")
+        dag = DAG().system("Test")
         # Should not raise
         head = dag.head
         assert head is not None
@@ -178,14 +177,14 @@ class TestDAGEdgeCases:
 
     def test_heads_property_returns_tuple(self) -> None:
         """Test .heads property returns a tuple."""
-        dag = DAG(system_prompt="Test")
+        dag = DAG().system("Test")
         heads = dag.heads
         assert isinstance(heads, tuple)
         assert len(heads) == 1
 
     def test_repr(self) -> None:
         """Test __repr__ method."""
-        dag = DAG(system_prompt="Test")
+        dag = DAG().system("Test")
         dag = dag.tools(BashTool())
         repr_str = repr(dag)
         assert "DAG" in repr_str
@@ -198,8 +197,7 @@ class TestDAGIntegration:
 
     def test_dag_to_messages_format(self) -> None:
         """Test that DAG produces correct message format for API."""
-        dag = DAG(system_prompt="Test")
-        dag.tools(BashTool()).user("Hello").assistant("Hi there")
+        dag = DAG().system("Test").tools(BashTool()).user("Hello").assistant("Hi there")
 
         messages = dag.to_messages()
         assert isinstance(messages, list)
@@ -208,16 +206,33 @@ class TestDAGIntegration:
 
     def test_dag_get_system_prompt_format(self) -> None:
         """Test that system prompt is correctly formatted."""
-        dag = DAG(system_prompt="Custom instructions")
+        dag = DAG().system("Custom instructions")
         system = dag.get_system_prompt()
         assert isinstance(system, str)
         assert len(system) > 0
 
     def test_dag_get_tools_format(self) -> None:
         """Test that tools are correctly formatted."""
-        dag = DAG(system_prompt="Test")
-        dag.tools(BashTool(), ReadTool())
+        dag = DAG().system("Test").tools(BashTool(), ReadTool())
         tools = dag.get_tools()
         assert isinstance(tools, list)
         assert all(isinstance(t, dict) for t in tools)
         assert all("name" in t and "input_schema" in t for t in tools)
+
+
+class TestImmutability:
+    """Test that frozen dataclasses are truly immutable."""
+
+    def test_node_is_frozen(self) -> None:
+        """Test that Node attributes cannot be mutated after construction."""
+        from nano_agent.dag import Node
+
+        node = Node.system("test")
+        with pytest.raises(AttributeError):
+            node.id = "hacked"  # type: ignore[misc]
+
+    def test_dag_is_frozen(self) -> None:
+        """Test that DAG attributes cannot be mutated after construction."""
+        dag = DAG()
+        with pytest.raises(AttributeError):
+            dag._heads = ()  # type: ignore[misc]
