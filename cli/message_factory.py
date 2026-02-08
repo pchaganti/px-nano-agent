@@ -102,7 +102,6 @@ def add_thinking_to_assistant(msg: UIMessage, thinking: str) -> None:
     """
     if thinking and thinking.strip():
         msg.append(renderer.thinking(thinking))
-        msg.append_newline()
 
 
 def add_text_to_assistant(
@@ -135,7 +134,6 @@ def add_text_to_assistant(
     if text and text.strip():
         if has_thinking:
             msg.append(renderer.thinking_separator())
-            msg.append_newline()
         msg.append(renderer.assistant(text))
         content_added = True
 

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from nano_agent import DAG, ClaudeCodeAPI, Message, Role
+from nano_agent.providers.claude_code import compute_billing_header
 
 # Mock captured config for testing
 MOCK_HEADERS: dict[str, str] = {
@@ -165,7 +166,12 @@ class TestClaudeCodeAPISend:
             messages = [Message(role=Role.USER, content="Hello")]
             await api.send(messages)
             json_body = mock_post.call_args.kwargs["json"]
-            assert json_body["system"] == MOCK_BODY_PARAMS["system"]
+            system = json_body["system"]
+            # First entry is the billing header
+            assert system[0]["text"].startswith("x-anthropic-billing-header:")
+            # Captured system messages follow (with cache_control applied)
+            captured = MOCK_BODY_PARAMS["system"][0]
+            assert system[1]["text"] == captured["text"]
 
 
 class TestClaudeCodeAPIContextManager:
@@ -209,3 +215,59 @@ class TestClaudeCodeAPIDefaults:
             api = ClaudeCodeAPI(auth_token="sk-ant-test")
             assert api.model == "claude-sonnet-4-20250514"
             assert api.max_tokens == 16000
+
+
+class TestBillingHeader:
+    """Test billing header computation and injection."""
+
+    def test_known_hash_for_hey(self) -> None:
+        """Verify known hash values for 'hey' (from send_request.py reference)."""
+        header = compute_billing_header("hey")
+        assert "cc_version=2.1.37.0d9" in header
+        assert "cch=fa690" in header
+        assert "cc_entrypoint=cli" in header
+
+    def test_custom_entrypoint(self) -> None:
+        """Verify custom entrypoint parameter."""
+        header = compute_billing_header("hey", entrypoint="sdk")
+        assert "cc_entrypoint=sdk" in header
+
+    def test_empty_message(self) -> None:
+        """Verify billing header works with empty message."""
+        header = compute_billing_header("")
+        assert header.startswith("x-anthropic-billing-header:")
+        assert "cc_version=2.1.37." in header
+        assert "cch=" in header
+
+    @pytest.mark.asyncio
+    async def test_billing_header_is_first_system_entry(
+        self, mock_load_config: MagicMock
+    ) -> None:
+        """Verify billing header is the first system entry with no cache_control."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "id": "msg_test",
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "text", "text": "Hi!"}],
+            "model": "claude-sonnet-4-20250514",
+            "stop_reason": "end_turn",
+            "usage": {
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+            },
+        }
+        api = ClaudeCodeAPI()
+        with patch.object(api._client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_response
+            messages = [Message(role=Role.USER, content="Hello")]
+            await api.send(messages)
+            json_body = mock_post.call_args.kwargs["json"]
+            system = json_body["system"]
+            # First entry is billing header
+            assert system[0]["text"].startswith("x-anthropic-billing-header:")
+            # Billing header must NOT have cache_control
+            assert "cache_control" not in system[0]

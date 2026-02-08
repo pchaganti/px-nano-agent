@@ -6,6 +6,7 @@ the Claude Code CLI format for API authentication.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -13,21 +14,77 @@ from typing import Any
 import httpx
 
 from ..dag import DAG
-from ..data_structures import Message, Response, convert_message_to_claude_format
+from ..data_structures import (
+    Message,
+    Response,
+    Role,
+    TextContent,
+    convert_message_to_claude_format,
+)
 from ..tools import Tool, ToolDict
 from .base import APIClientMixin
 
 __all__ = ["ClaudeCodeAPI", "convert_message_to_claude_format"]
 
+# Claude Code CLI version we're mimicking
+CC_VERSION = "2.1.37"
+
+# Salt used in the cc_version hash computation (from Claude Code's obfuscated source)
+_BILLING_SALT = "59cf53e54c78"
+
+
+def _sha256(s: str) -> str:
+    return hashlib.sha256(s.encode()).hexdigest()
+
+
+def compute_billing_header(
+    message_text: str, entrypoint: str = "cli"
+) -> str:
+    """Build the x-anthropic-billing-header system message text.
+
+    Computes two hashes from the user message:
+    - cc_version suffix (3 hex chars): salt + chars_at_[4,7,20] + version -> SHA-256[:3]
+    - cch (5 hex chars): full message -> SHA-256[:5]
+    """
+    sampled = "".join(
+        message_text[i] if i < len(message_text) else "0" for i in (4, 7, 20)
+    )
+    version_hash = _sha256(f"{_BILLING_SALT}{sampled}{CC_VERSION}")[:3]
+    cch = _sha256(message_text)[:5]
+    return (
+        f"x-anthropic-billing-header: "
+        f"cc_version={CC_VERSION}.{version_hash}; "
+        f"cc_entrypoint={entrypoint}; "
+        f"cch={cch};"
+    )
+
+
 # Default headers matching Claude Code CLI format
 DEFAULT_HEADERS = {
     "accept": "application/json",
-    "anthropic-beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14",
+    "anthropic-beta": (
+        "claude-code-20250219,"
+        "oauth-2025-04-20,"
+        "interleaved-thinking-2025-05-14,"
+        "context-management-2025-06-27,"
+        "prompt-caching-scope-2026-01-05,"
+        "effort-2025-11-24,"
+        "adaptive-thinking-2026-01-28"
+    ),
     "anthropic-dangerous-direct-browser-access": "true",
     "anthropic-version": "2023-06-01",
     "content-type": "application/json",
-    "user-agent": "claude-cli/2.1.17 (external, sdk-cli)",
+    "user-agent": f"claude-cli/{CC_VERSION} (external, cli)",
     "x-app": "cli",
+    "X-Stainless-Arch": "arm64",
+    "X-Stainless-Lang": "js",
+    "X-Stainless-OS": "MacOS",
+    "X-Stainless-Package-Version": "0.70.0",
+    "X-Stainless-Retry-Count": "0",
+    "X-Stainless-Runtime": "node",
+    "X-Stainless-Runtime-Version": "v24.3.0",
+    "X-Stainless-Timeout": "600",
+    "Connection": "keep-alive",
 }
 
 # Default system messages matching Claude Code CLI format
@@ -191,6 +248,21 @@ class ClaudeCodeAPI(APIClientMixin):
         )
 
     @staticmethod
+    def _extract_first_user_text(messages: list[Message]) -> str:
+        """Return the text of the first TextContent block in the first user message."""
+        for msg in messages:
+            if msg.role == Role.USER:
+                content = msg.content
+                if isinstance(content, str):
+                    return content
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, TextContent):
+                            return block.text
+                return ""
+        return ""
+
+    @staticmethod
     def _add_system_cache_control(system_messages: list[dict[str, Any]]) -> None:
         """Add cache_control to the last 2 system blocks (up to 2 breakpoints).
 
@@ -259,8 +331,6 @@ class ClaudeCodeAPI(APIClientMixin):
                 system_messages.extend(
                     {"type": "text", "text": prompt} for prompt in dag_system_prompts
                 )
-            # Cache system blocks (up to 2 breakpoints on last 2 blocks)
-            self._add_system_cache_control(system_messages)
         else:
             tools_list = []
             if tools:
@@ -270,7 +340,13 @@ class ClaudeCodeAPI(APIClientMixin):
                 system_messages = list(self.captured_system)
             else:
                 system_messages = list(DEFAULT_SYSTEM)
-            self._add_system_cache_control(system_messages)
+
+        # Prepend billing header (must be first system entry, no cache_control)
+        first_user_text = self._extract_first_user_text(messages)
+        billing_text = compute_billing_header(first_user_text)
+        system_messages.insert(0, {"type": "text", "text": billing_text})
+        self._add_system_cache_control(system_messages)
+        system_messages[0].pop("cache_control", None)
 
         # Build request body - convert messages to Claude format
         # (handles sessions created with OpenAI/Codex APIs)
