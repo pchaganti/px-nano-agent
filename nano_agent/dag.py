@@ -273,15 +273,13 @@ class Node:
             node_map[pid] for pid in data.get("parent_ids", []) if pid in node_map
         )
 
-        node = cls(
+        return cls(
             parents=parents_tuple,
             data=node_data,
+            id=data.get("id", _generate_id()),
+            timestamp=data.get("timestamp", time.time()),
             metadata=data.get("metadata", {}),
         )
-        # Use object.__setattr__ for frozen dataclass
-        object.__setattr__(node, "id", data.get("id", node.id))
-        object.__setattr__(node, "timestamp", data.get("timestamp", node.timestamp))
-        return node
 
     @staticmethod
     def save_graph(
@@ -384,7 +382,7 @@ class DAG:
 
     Examples:
         # Basic usage (chaining creates new instances)
-        dag = DAG(system_prompt="You are helpful.")
+        dag = DAG().system("You are helpful.")
         dag = dag.tools(BashTool(), ReadTool()).user("What is 2+2?")
         response = api.send(dag)
 
@@ -398,33 +396,6 @@ class DAG:
 
     _heads: tuple[Node, ...] = field(default_factory=tuple)
     _tools: tuple[Tool, ...] | None = None
-
-    def __init__(
-        self,
-        system_prompt: str | None = None,
-        _heads: tuple[Node, ...] | None = None,
-        _tools: tuple[Tool, ...] | None = None,
-    ):
-        """Create a new DAG, optionally starting with a system prompt.
-
-        Args:
-            system_prompt: Optional system prompt to start with
-            _heads: Internal - tuple of head nodes
-            _tools: Internal - tuple of tools
-        """
-        if _heads is not None:
-            # Internal constructor for creating modified copies
-            object.__setattr__(self, "_heads", _heads)
-            object.__setattr__(self, "_tools", _tools)
-        elif system_prompt:
-            # User constructor with system prompt
-            node = Node.system(system_prompt)
-            object.__setattr__(self, "_heads", (node,))
-            object.__setattr__(self, "_tools", None)
-        else:
-            # Empty DAG
-            object.__setattr__(self, "_heads", ())
-            object.__setattr__(self, "_tools", None)
 
     def _with_heads(
         self,

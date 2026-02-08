@@ -13,11 +13,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from .cancellation import CancellationToken
-from .data_structures import SubGraph
+from .data_structures import Message, Role, SubGraph, TextContent
 
 if TYPE_CHECKING:
-    from .api_base import APIProtocol
     from .dag import DAG
+    from .providers.base import APIProtocol
     from .tools import Tool
 
 # Type alias for permission callback
@@ -133,7 +133,7 @@ async def run_sub_agent(
         tool_use_id = f"subagent_{uuid.uuid4().hex[:12]}"
 
     # Create sub-agent DAG
-    sub_dag = DAG(system_prompt=system_prompt)
+    sub_dag = DAG().system(system_prompt)
     if tools:
         sub_dag = sub_dag.tools(*tools)
     sub_dag = sub_dag.user(user_message)
@@ -167,8 +167,6 @@ def _extract_summary(dag: DAG) -> str:
 
     Looks for the last assistant message with text content.
     """
-    from .data_structures import Message, Role, TextContent
-
     if not dag._heads:
         return ""
 

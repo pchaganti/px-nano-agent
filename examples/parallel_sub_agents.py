@@ -181,8 +181,8 @@ async def main() -> None:
     doc_tool = DocSummaryTool()
 
     # Create DAG with both tools
-    dag = DAG(
-        system_prompt="""You are a helpful assistant with access to security and documentation tools.
+    dag = DAG().system(
+        """You are a helpful assistant with access to security and documentation tools.
 
 IMPORTANT: When asked to perform multiple analyses, you MUST call all the tools
 in a SINGLE response (parallel tool calls). Do NOT call them sequentially."""

@@ -27,7 +27,7 @@ class TestExecutionContext:
     def test_create_context(self):
         """Test basic context creation."""
         api = MockAPI()
-        dag = DAG(system_prompt="Test")
+        dag = DAG().system("Test")
 
         ctx = ExecutionContext(api=api, dag=dag)
 
@@ -41,10 +41,10 @@ class TestExecutionContext:
     def test_child_context_increments_depth(self):
         """Test that child_context increments depth."""
         api = MockAPI()
-        dag = DAG(system_prompt="Test")
+        dag = DAG().system("Test")
         ctx = ExecutionContext(api=api, dag=dag, depth=0)
 
-        child_dag = DAG(system_prompt="Child")
+        child_dag = DAG().system("Child")
         child_ctx = ctx.child_context(child_dag)
 
         assert child_ctx.depth == 1
@@ -54,7 +54,7 @@ class TestExecutionContext:
     def test_child_context_succeeds_at_max_depth(self):
         """Test that child_context succeeds when depth == max_depth."""
         api = MockAPI()
-        dag = DAG(system_prompt="Test")
+        dag = DAG().system("Test")
         ctx = ExecutionContext(api=api, dag=dag, depth=5, max_depth=5)
 
         # depth == max_depth should succeed (creates child at depth 6)
@@ -64,7 +64,7 @@ class TestExecutionContext:
     def test_child_context_raises_above_max_depth(self):
         """Test that child_context raises RecursionError above max depth."""
         api = MockAPI()
-        dag = DAG(system_prompt="Test")
+        dag = DAG().system("Test")
         ctx = ExecutionContext(api=api, dag=dag, depth=6, max_depth=5)
 
         with pytest.raises(RecursionError, match="Sub-agent depth limit exceeded"):
@@ -73,7 +73,7 @@ class TestExecutionContext:
     def test_custom_max_depth(self):
         """Test custom max_depth setting."""
         api = MockAPI()
-        dag = DAG(system_prompt="Test")
+        dag = DAG().system("Test")
         ctx = ExecutionContext(api=api, dag=dag, max_depth=3)
 
         # Can create children up to and including max_depth
@@ -164,7 +164,7 @@ class TestSubGraph:
 
     def test_subgraph_from_dag(self):
         """Test DAG.to_sub_graph creates SubGraph from DAG."""
-        dag = DAG(system_prompt="Test system prompt")
+        dag = DAG().system("Test system prompt")
         dag = dag.user("Hello")
         dag = dag.assistant("Hi there!")
 
@@ -185,7 +185,7 @@ class TestSubGraph:
 
     def test_subgraph_to_dag_roundtrip(self):
         """Test SubGraph -> DAG -> SubGraph roundtrip."""
-        original_dag = DAG(system_prompt="Test system prompt")
+        original_dag = DAG().system("Test system prompt")
         original_dag = original_dag.user("User message")
         original_dag = original_dag.assistant("Assistant response")
 
@@ -306,7 +306,7 @@ class TestDAGSubGraph:
 
     def test_add_subgraph_to_dag(self):
         """Test adding SubGraph to DAG."""
-        dag = DAG(system_prompt="Test")
+        dag = DAG().system("Test")
         dag = dag.user("Hello")
 
         sg = SubGraph(

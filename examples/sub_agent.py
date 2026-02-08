@@ -111,8 +111,8 @@ async def main() -> None:
     code_review_tool = CodeReviewTool()
 
     # Create DAG with CodeReviewTool
-    dag = DAG(
-        system_prompt="You are a helpful assistant with access to code review tools."
+    dag = DAG().system(
+        "You are a helpful assistant with access to code review tools."
     )
     dag = dag.tools(code_review_tool)
     dag = dag.user("Please review the file examples/hello_world.py for code quality.")
